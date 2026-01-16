@@ -14,9 +14,18 @@ public sealed class BashTool : ITool
     public string Description =>
         $"Execute a bash command in the current working directory. Returns stdout and stderr. " +
         $"Output is truncated to last {DefaultMaxLines} lines or {DefaultMaxBytes / 1024}KB (whichever is hit first). " +
-        $"If truncated, full output is saved to a temp file. " +
-        $"Optionally provide a timeout in seconds (default: {DefaultTimeoutSeconds}s). " +
-        """Input: {"command": "ls -la", "timeout": 30}""";
+        $"If truncated, full output is saved to a temp file.";
+
+    public object ParametersSchema => new
+    {
+        type = "object",
+        properties = new
+        {
+            command = new { type = "string", description = "The bash command to execute" },
+            timeout = new { type = "integer", description = $"Timeout in seconds (default: {DefaultTimeoutSeconds})" }
+        },
+        required = new[] { "command" }
+    };
 
     public async Task<string> ExecuteAsync(string input, CancellationToken ct = default)
     {

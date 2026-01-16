@@ -7,6 +7,13 @@ public sealed class ReadFileTool : ITool
     public string Name => "read_file";
     public string Description => "Read the contents of a given relative file path. Use this when you want to see what's inside a file. Do not use this with directory names.";
 
+    public object ParametersSchema => new
+    {
+        type = "object",
+        properties = new { path = new { type = "string", description = "The relative path to the file to read" } },
+        required = new[] { "path" }
+    };
+
     public async Task<string> ExecuteAsync(string input, CancellationToken ct = default)
     {
         try
@@ -33,8 +40,10 @@ public sealed class ReadFileTool : ITool
         if (!input.StartsWith('{')) return input;
 
         using var doc = JsonDocument.Parse(input);
-        if (doc.RootElement.TryGetProperty("path", out var prop))
-            return prop.GetString() ?? input;
+        if (doc.RootElement.TryGetProperty("path", out var pathProp))
+            return pathProp.GetString() ?? input;
+        if (doc.RootElement.TryGetProperty("input", out var inputProp))
+            return inputProp.GetString() ?? input;
 
         return input;
     }

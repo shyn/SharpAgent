@@ -13,6 +13,18 @@ public sealed class EditFileTool : ITool
         If the file specified with path doesn't exist, it will be created.
         """;
 
+    public object ParametersSchema => new
+    {
+        type = "object",
+        properties = new
+        {
+            path = new { type = "string", description = "The file path to edit or create" },
+            old_str = new { type = "string", description = "The text to replace (empty string to append to new file)" },
+            new_str = new { type = "string", description = "The replacement text" }
+        },
+        required = new[] { "path", "new_str" }
+    };
+
     public async Task<string> ExecuteAsync(string input, CancellationToken ct = default)
     {
         try

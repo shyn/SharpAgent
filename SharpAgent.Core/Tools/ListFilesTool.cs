@@ -7,6 +7,12 @@ public sealed class ListFilesTool : ITool
     public string Name => "list_files";
     public string Description => "List files and directories at a given path. If no path is provided, lists files in the current directory.";
 
+    public object ParametersSchema => new
+    {
+        type = "object",
+        properties = new { path = new { type = "string", description = "The directory path to list (optional, defaults to current directory)" } }
+    };
+
     public Task<string> ExecuteAsync(string input, CancellationToken ct = default)
     {
         try
@@ -42,8 +48,10 @@ public sealed class ListFilesTool : ITool
         if (!input.StartsWith('{')) return input;
 
         using var doc = JsonDocument.Parse(input);
-        if (doc.RootElement.TryGetProperty("path", out var prop))
-            return prop.GetString() ?? "";
+        if (doc.RootElement.TryGetProperty("path", out var pathProp))
+            return pathProp.GetString() ?? "";
+        if (doc.RootElement.TryGetProperty("input", out var inputProp))
+            return inputProp.GetString() ?? "";
 
         return "";
     }
