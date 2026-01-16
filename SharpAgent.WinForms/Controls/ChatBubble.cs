@@ -28,7 +28,13 @@ public class ChatBubble : Control
         _maxWidth = maxWidth;
 
         DoubleBuffered = true;
-        BackColor = Color.Transparent;
+        // 设置为对应气泡色，避免透明色异常
+        BackColor = type switch
+        {
+            BubbleType.User => UserBubbleColor,
+            BubbleType.Assistant => AssistantBubbleColor,
+            _ => SystemBubbleColor
+        };
         Padding = new Padding(12, 8, 12, 8);
 
         _roleLabel = new Label
@@ -37,7 +43,7 @@ public class ChatBubble : Control
             Font = new Font("Segoe UI", 9, FontStyle.Bold),
             ForeColor = type == BubbleType.User ? Color.FromArgb(180, 210, 255) : Color.FromArgb(150, 150, 155),
             AutoSize = true,
-            BackColor = Color.Transparent,
+            BackColor = BackColor,
             Location = new Point(16, 10)
         };
 
@@ -47,7 +53,7 @@ public class ChatBubble : Control
             Font = new Font("Segoe UI", 10),
             ForeColor = Color.White,
             AutoSize = false,
-            BackColor = Color.Transparent,
+            BackColor = BackColor,
             MaximumSize = new Size(maxWidth - 32, 0),
             AutoEllipsis = false
         };

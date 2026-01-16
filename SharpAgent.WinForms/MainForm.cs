@@ -166,7 +166,7 @@ public partial class MainForm : Form
         var welcomeMsg = _configService.HasApiKey()
             ? $"Welcome to SharpAgent! Using {_configService.Config.Provider} ({_configService.GetCurrentModelName()})"
             : "Welcome to SharpAgent! Click ⚙ to configure your API keys.";
-        _chatPanel.AddSystemMessage(welcomeMsg);
+        //_chatPanel.AddSystemMessage(welcomeMsg);
     }
 
     private void ProviderCombo_SelectedIndexChanged(object? sender, EventArgs e)
