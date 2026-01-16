@@ -45,7 +45,12 @@ public sealed class OpenAiClient : ILlmClient
         var responseBody = await response.Content.ReadAsStringAsync(ct);
         _logger.LogDebug("HTTP Response Body:\n{ResponseBody}", responseBody);
 
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError("HTTP {StatusCode} from {Url}: {Body}",
+                (int)response.StatusCode, _httpClient.BaseAddress + "chat/completions", responseBody);
+            response.EnsureSuccessStatusCode();
+        }
 
         var result = JsonSerializer.Deserialize<OpenAiResponse>(responseBody, JsonOptions);
         var choice = result?.Choices?.FirstOrDefault()?.Message;

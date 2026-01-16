@@ -12,11 +12,14 @@ public sealed class Agent : IAgent
     private readonly int _maxIterations;
     private readonly ILogger<Agent> _logger;
 
+    public Action<ToolCall>? OnToolCallStarted { get; set; }
+    public Action<ToolCall, string>? OnToolCallCompleted { get; set; }
+
     public Agent(
         ILlmClient llmClient,
         IReadOnlyList<ITool> tools,
         string systemPrompt = "You are a helpful assistant. Use tools when needed to accomplish tasks.",
-        int maxIterations = 10,
+        int maxIterations = 100,
         ILogger<Agent>? logger = null)
     {
         _llmClient = llmClient;
@@ -59,7 +62,9 @@ public sealed class Agent : IAgent
             foreach (var toolCall in response.ToolCalls!)
             {
                 _logger.LogDebug("Executing tool: {ToolName} with args: {Args}", toolCall.Name, toolCall.Arguments);
+                OnToolCallStarted?.Invoke(toolCall);
                 var result = await ExecuteToolAsync(toolCall, ct);
+                OnToolCallCompleted?.Invoke(toolCall, result);
                 _logger.LogDebug("Tool result: {Result}", result.Length > 200 ? result[..200] + "..." : result);
                 messages.Add(new Message(Role.Tool, result, toolCall.Name, toolCall.Id));
             }
