@@ -38,6 +38,21 @@ public sealed class AnthropicClient : ILlmClient
         IReadOnlyList<ITool> tools,
         CancellationToken ct = default)
     {
+        LlmMessageCompletedEvent? completed = null;
+        await foreach (var evt in StreamCompletionAsync(messages, tools, ct))
+        {
+            if (evt is LlmMessageCompletedEvent msg)
+                completed = msg;
+        }
+
+        return new LlmResponse(completed?.FullText, completed?.ToolCalls);
+    }
+
+    public async IAsyncEnumerable<LlmStreamEvent> StreamCompletionAsync(
+        IReadOnlyList<Message> messages,
+        IReadOnlyList<ITool> tools,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
         var systemMessage = messages.FirstOrDefault(m => m.Role == Role.System)?.Content;
         var nonSystemMessages = messages.Where(m => m.Role != Role.System).ToList();
 
@@ -69,21 +84,23 @@ public sealed class AnthropicClient : ILlmClient
             response.EnsureSuccessStatusCode();
         }
 
-        var textBuilder = new StringBuilder();
-        var toolCalls = new List<ToolCall>();
+        var state = new StreamState();
 
         await foreach (var chunk in ReadSseStreamAsync(response, ct))
         {
-            ProcessStreamEvent(chunk, textBuilder, toolCalls);
+            foreach (var evt in ProcessStreamEventToEvents(chunk, state))
+            {
+                yield return evt;
+            }
         }
 
-        var content = textBuilder.ToString();
+        var content = state.TextBuilder.ToString();
         _logger.LogDebug("Streamed response complete. Content length: {Length}, ToolCalls: {Count}",
-            content.Length, toolCalls.Count);
+            content.Length, state.ToolCalls.Count);
 
-        return new LlmResponse(
+        yield return new LlmMessageCompletedEvent(
             string.IsNullOrEmpty(content) ? null : content,
-            toolCalls.Count > 0 ? toolCalls : null);
+            state.ToolCalls.Count > 0 ? state.ToolCalls : null);
     }
 
     private async IAsyncEnumerable<SseEvent> ReadSseStreamAsync(
@@ -116,7 +133,14 @@ public sealed class AnthropicClient : ILlmClient
         }
     }
 
-    private void ProcessStreamEvent(SseEvent evt, StringBuilder textBuilder, List<ToolCall> toolCalls)
+    private sealed class StreamState
+    {
+        public StringBuilder TextBuilder { get; } = new();
+        public List<ToolCall> ToolCalls { get; } = [];
+        public int CurrentToolIndex { get; set; } = -1;
+    }
+
+    private IEnumerable<LlmStreamEvent> ProcessStreamEventToEvents(SseEvent evt, StreamState state)
     {
         _logger.LogTrace("SSE Event: {Type}", evt.Type);
 
@@ -126,10 +150,11 @@ public sealed class AnthropicClient : ILlmClient
                 var blockStart = JsonSerializer.Deserialize<ContentBlockStart>(evt.Data, JsonOptions);
                 if (blockStart?.ContentBlock?.Type == "tool_use")
                 {
-                    toolCalls.Add(new ToolCall(
-                        blockStart.ContentBlock.Id ?? string.Empty,
-                        blockStart.ContentBlock.Name ?? string.Empty,
-                        string.Empty));
+                    state.CurrentToolIndex = blockStart.Index;
+                    var id = blockStart.ContentBlock.Id ?? string.Empty;
+                    var name = blockStart.ContentBlock.Name ?? string.Empty;
+                    state.ToolCalls.Add(new ToolCall(id, name, string.Empty));
+                    yield return new LlmToolUseStartedEvent(id, name);
                 }
                 break;
 
@@ -137,15 +162,27 @@ public sealed class AnthropicClient : ILlmClient
                 var delta = JsonSerializer.Deserialize<ContentBlockDelta>(evt.Data, JsonOptions);
                 if (delta?.Delta?.Type == "text_delta")
                 {
-                    textBuilder.Append(delta.Delta.Text ?? string.Empty);
+                    var text = delta.Delta.Text ?? string.Empty;
+                    state.TextBuilder.Append(text);
+                    yield return new LlmTextDeltaEvent(text);
                 }
-                else if (delta?.Delta?.Type == "input_json_delta" && toolCalls.Count > 0)
+                else if (delta?.Delta?.Type == "input_json_delta" && state.ToolCalls.Count > 0)
                 {
-                    var lastTool = toolCalls[^1];
-                    toolCalls[^1] = lastTool with
+                    var partialJson = delta.Delta.PartialJson ?? string.Empty;
+                    var lastTool = state.ToolCalls[^1];
+                    state.ToolCalls[^1] = lastTool with
                     {
-                        Arguments = lastTool.Arguments + (delta.Delta.PartialJson ?? string.Empty)
+                        Arguments = lastTool.Arguments + partialJson
                     };
+                    yield return new LlmToolUseArgumentsDeltaEvent(lastTool.Id, partialJson);
+                }
+                break;
+
+            case "content_block_stop":
+                if (state.CurrentToolIndex >= 0 && state.ToolCalls.Count > 0)
+                {
+                    yield return new LlmToolUseCompletedEvent(state.ToolCalls[^1].Id);
+                    state.CurrentToolIndex = -1;
                 }
                 break;
         }
@@ -202,15 +239,7 @@ public sealed class AnthropicClient : ILlmClient
     {
         Name = t.Name,
         Description = t.Description,
-        InputSchema = new AnthropicInputSchema
-        {
-            Type = "object",
-            Properties = new Dictionary<string, AnthropicProperty>
-            {
-                ["input"] = new() { Type = "string", Description = "The input for the tool" }
-            },
-            Required = new[] { "input" }
-        }
+        InputSchema = t.ParametersSchema
     };
 
     private sealed record SseEvent(string Type, string Data);
@@ -256,20 +285,7 @@ public sealed class AnthropicClient : ILlmClient
     {
         public required string Name { get; init; }
         public required string Description { get; init; }
-        public required AnthropicInputSchema InputSchema { get; init; }
-    }
-
-    private sealed class AnthropicInputSchema
-    {
-        public required string Type { get; init; }
-        public required Dictionary<string, AnthropicProperty> Properties { get; init; }
-        public string[]? Required { get; init; }
-    }
-
-    private sealed class AnthropicProperty
-    {
-        public required string Type { get; init; }
-        public string? Description { get; init; }
+        public required object InputSchema { get; init; }
     }
 
     private sealed class ContentBlockStart

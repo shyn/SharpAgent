@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
@@ -64,6 +65,31 @@ public sealed class OpenAiClient : ILlmClient
         return new LlmResponse(choice.Content, toolCalls);
     }
 
+    public async IAsyncEnumerable<LlmStreamEvent> StreamCompletionAsync(
+        IReadOnlyList<Message> messages,
+        IReadOnlyList<ITool> tools,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var response = await GetCompletionAsync(messages, tools, ct);
+        
+        if (!string.IsNullOrEmpty(response.Content))
+        {
+            yield return new LlmTextDeltaEvent(response.Content);
+        }
+        
+        if (response.ToolCalls is { Count: > 0 })
+        {
+            foreach (var tc in response.ToolCalls)
+            {
+                yield return new LlmToolUseStartedEvent(tc.Id, tc.Name);
+                yield return new LlmToolUseArgumentsDeltaEvent(tc.Id, tc.Arguments);
+                yield return new LlmToolUseCompletedEvent(tc.Id);
+            }
+        }
+        
+        yield return new LlmMessageCompletedEvent(response.Content, response.ToolCalls);
+    }
+
     private static OpenAiMessage ToOpenAiMessage(Message m) => m.Role switch
     {
         Role.Tool => new OpenAiMessage { Role = "tool", Content = m.Content, ToolCallId = m.ToolCallId },
@@ -88,7 +114,7 @@ public sealed class OpenAiClient : ILlmClient
         {
             Name = t.Name,
             Description = t.Description,
-            Parameters = new { type = "object", properties = new { input = new { type = "string" } } }
+            Parameters = t.ParametersSchema
         }
     };
 

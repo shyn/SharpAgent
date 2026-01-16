@@ -1,5 +1,7 @@
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using SharpAgent.Core.Streaming;
 
 namespace SharpAgent.Core;
 
@@ -32,7 +34,21 @@ public sealed class Agent : IAgent
 
     public async Task<string> RunAsync(string goal, CancellationToken ct = default)
     {
+        string? finalAnswer = null;
+        await foreach (var evt in RunStreamingAsync(goal, ct))
+        {
+            if (evt is AgentCompletedEvent completed)
+                finalAnswer = completed.FinalAnswer;
+        }
+        return finalAnswer ?? string.Empty;
+    }
+
+    public async IAsyncEnumerable<AgentStreamEvent> RunStreamingAsync(
+        string goal, 
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
         _logger.LogInformation("Starting agent with goal: {Goal}", goal);
+        yield return new AgentStartedEvent(goal);
 
         var messages = new List<Message>
         {
@@ -45,33 +61,65 @@ public sealed class Agent : IAgent
             _logger.LogDebug("Iteration {Iteration}/{MaxIterations}", i + 1, _maxIterations);
             _logger.LogDebug("Sending {MessageCount} messages to LLM", messages.Count);
 
-            var response = await _llmClient.GetCompletionAsync(messages, _tools, ct);
+            var textBuilder = new System.Text.StringBuilder();
+            IReadOnlyList<ToolCall>? toolCalls = null;
 
-            _logger.LogDebug("LLM response: Content={Content}, ToolCalls={ToolCallCount}",
-                response.Content?.Length > 100 ? response.Content[..100] + "..." : response.Content,
-                response.ToolCalls?.Count ?? 0);
-
-            if (!response.HasToolCalls)
+            await foreach (var llmEvent in _llmClient.StreamCompletionAsync(messages, _tools, ct))
             {
-                _logger.LogInformation("Agent completed with response length: {Length}", response.Content?.Length ?? 0);
-                return response.Content ?? string.Empty;
+                switch (llmEvent)
+                {
+                    case LlmTextDeltaEvent delta:
+                        textBuilder.Append(delta.Text);
+                        yield return new AgentTextDeltaEvent(delta.Text);
+                        break;
+                    case LlmToolUseStartedEvent toolStart:
+                        yield return new AgentToolUseStartedEvent(toolStart.Id, toolStart.Name);
+                        break;
+                    case LlmToolUseArgumentsDeltaEvent argsDelta:
+                        yield return new AgentToolUseArgumentsDeltaEvent(argsDelta.Id, argsDelta.PartialJson);
+                        break;
+                    case LlmToolUseCompletedEvent toolComplete:
+                        yield return new AgentToolUseCompletedEvent(toolComplete.Id);
+                        break;
+                    case LlmMessageCompletedEvent completed:
+                        toolCalls = completed.ToolCalls;
+                        break;
+                }
             }
 
-            messages.Add(new Message(Role.Assistant, response.Content ?? string.Empty, ToolCalls: response.ToolCalls));
+            var content = textBuilder.ToString();
+            _logger.LogDebug("LLM response: Content={Content}, ToolCalls={ToolCallCount}",
+                content.Length > 100 ? content[..100] + "..." : content,
+                toolCalls?.Count ?? 0);
 
-            foreach (var toolCall in response.ToolCalls!)
+            if (toolCalls is null or { Count: 0 })
+            {
+                _logger.LogInformation("Agent completed with response length: {Length}", content.Length);
+                yield return new AgentCompletedEvent(content);
+                yield break;
+            }
+
+            messages.Add(new Message(Role.Assistant, content, ToolCalls: toolCalls));
+
+            foreach (var toolCall in toolCalls)
             {
                 _logger.LogDebug("Executing tool: {ToolName} with args: {Args}", toolCall.Name, toolCall.Arguments);
                 OnToolCallStarted?.Invoke(toolCall);
+                yield return new AgentToolCallStartedEvent(toolCall.Id, toolCall.Name, toolCall.Arguments);
+
                 var result = await ExecuteToolAsync(toolCall, ct);
+                var isError = result.StartsWith("Error:");
+
                 OnToolCallCompleted?.Invoke(toolCall, result);
+                yield return new AgentToolCallCompletedEvent(toolCall.Id, result, isError);
+
                 _logger.LogDebug("Tool result: {Result}", result.Length > 200 ? result[..200] + "..." : result);
                 messages.Add(new Message(Role.Tool, result, toolCall.Name, toolCall.Id));
             }
         }
 
         _logger.LogWarning("Agent exceeded maximum iterations ({MaxIterations})", _maxIterations);
-        throw new InvalidOperationException($"Agent exceeded maximum iterations ({_maxIterations})");
+        yield return new AgentErrorEvent($"Agent exceeded maximum iterations ({_maxIterations})");
     }
 
     private async Task<string> ExecuteToolAsync(ToolCall toolCall, CancellationToken ct)

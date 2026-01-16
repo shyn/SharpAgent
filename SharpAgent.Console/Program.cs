@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using SharpAgent.Core;
+using SharpAgent.Core.Streaming;
 using SharpAgent.Core.Tools;
 
 var provider = Environment.GetEnvironmentVariable("LLM_PROVIDER")?.ToLowerInvariant() ?? "openai";
@@ -65,23 +66,6 @@ else
 var tools = new ITool[] { new CalculatorTool(), new ReadFileTool(), new ListFilesTool(), new BashTool() };
 var agent = new Agent(llmClient, tools, logger: agentLogger);
 
-agent.OnToolCallStarted = toolCall =>
-{
-    Console.ForegroundColor = ConsoleColor.Cyan;
-    Console.WriteLine($"  → Calling tool: {toolCall.Name}");
-    Console.ForegroundColor = ConsoleColor.DarkGray;
-    Console.WriteLine($"    Args: {toolCall.Arguments}");
-    Console.ResetColor();
-};
-
-agent.OnToolCallCompleted = (toolCall, result) =>
-{
-    Console.ForegroundColor = ConsoleColor.Green;
-    var displayResult = result.Length > 200 ? result[..200] + "..." : result;
-    Console.WriteLine($"  ✓ {toolCall.Name} returned: {displayResult}");
-    Console.ResetColor();
-};
-
 Console.WriteLine("SharpAgent - Type 'exit' to quit");
 Console.WriteLine($"Provider: {provider} | Model: {modelName} | Log level: {logLevel}");
 Console.WriteLine();
@@ -96,8 +80,44 @@ while (true)
 
     try
     {
-        var response = await agent.RunAsync(input);
-        Console.WriteLine($"Agent: {response}");
+        Console.Write("Agent: ");
+        await foreach (var evt in agent.RunStreamingAsync(input))
+        {
+            switch (evt)
+            {
+                case AgentTextDeltaEvent delta:
+                    Console.Write(delta.Text);
+                    break;
+                    
+                case AgentToolCallStartedEvent toolStart:
+                    Console.WriteLine();
+                    Console.ForegroundColor = ConsoleColor.Cyan;
+                    Console.WriteLine($"  → Calling tool: {toolStart.ToolName}");
+                    Console.ForegroundColor = ConsoleColor.DarkGray;
+                    Console.WriteLine($"    Args: {toolStart.Arguments}");
+                    Console.ResetColor();
+                    break;
+                    
+                case AgentToolCallCompletedEvent toolComplete:
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    var displayResult = toolComplete.Result.Length > 200 
+                        ? toolComplete.Result[..200] + "..." 
+                        : toolComplete.Result;
+                    Console.WriteLine($"  ✓ Result: {displayResult}");
+                    Console.ResetColor();
+                    break;
+                    
+                case AgentCompletedEvent:
+                    Console.WriteLine();
+                    break;
+                    
+                case AgentErrorEvent error:
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"\nError: {error.Message}");
+                    Console.ResetColor();
+                    break;
+            }
+        }
         Console.WriteLine();
     }
     catch (Exception ex)
