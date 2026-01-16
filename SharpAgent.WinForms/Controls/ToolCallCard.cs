@@ -31,6 +31,7 @@ public class ToolCallCard : Control
         _arguments = arguments;
         _maxWidth = maxWidth;
 
+        SetStyle(ControlStyles.SupportsTransparentBackColor, true);
         DoubleBuffered = true;
         BackColor = Color.Transparent;
 
