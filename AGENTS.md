@@ -10,6 +10,7 @@
 - **SharpAgent.Core**: Core library with agent loop, LLM client interface, tool abstractions, and message types
 - **SharpAgent.Core.Tests**: xUnit tests using NSubstitute for mocking
 - **SharpAgent.Console**: CLI application entry point
+- **SharpAgent.WinForms**: Windows Forms GUI application
 - Key interfaces: `IAgent`, `ILlmClient`, `ITool`
 - Tools live in `SharpAgent.Core/Tools/` and implement `ITool`
 
