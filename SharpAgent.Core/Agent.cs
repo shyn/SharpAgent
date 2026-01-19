@@ -21,7 +21,7 @@ public sealed class Agent : IAgent
         ILlmClient llmClient,
         IReadOnlyList<ITool> tools,
         string systemPrompt = "You are a helpful assistant. Use tools when needed to accomplish tasks.",
-        int maxIterations = 100,
+        int maxIterations = 20,
         ILogger<Agent>? logger = null)
     {
         _llmClient = llmClient;
@@ -47,7 +47,6 @@ public sealed class Agent : IAgent
         string goal, 
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        _logger.LogInformation("Starting agent with goal: {Goal}", goal);
         yield return new AgentStartedEvent(goal);
 
         var messages = new List<Message>

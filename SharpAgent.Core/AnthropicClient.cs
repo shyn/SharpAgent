@@ -93,8 +93,30 @@ public sealed class AnthropicClient : ILlmClient
         {
             var errorBody = await response.Content.ReadAsStringAsync(ct);
             var requestUrl = _httpClient.BaseAddress + "messages";
+
+            const int maxChars = 500;
+            string truncatedRequestJson = requestJson.Length > maxChars
+                ? requestJson[..maxChars] + $"... ({requestJson.Length - maxChars} more chars)"
+                : requestJson;
+            string truncatedErrorBody = errorBody.Length > maxChars
+                ? errorBody[..maxChars] + $"... ({errorBody.Length - maxChars} more chars)"
+                : errorBody;
+
+            Console.WriteLine();
+            Console.WriteLine("=== HTTP Error ===");
+            Console.WriteLine($"Status Code: {(int)response.StatusCode} ({response.StatusCode})");
+            Console.WriteLine($"Request URL: {requestUrl}");
+            Console.WriteLine();
+            Console.WriteLine("=== Request Body ===");
+            Console.WriteLine(truncatedRequestJson);
+            Console.WriteLine();
+            Console.WriteLine("=== Response Body ===");
+            Console.WriteLine(truncatedErrorBody);
+            Console.WriteLine("==================");
+            Console.WriteLine();
+
             _logger.LogError("HTTP {StatusCode} error. Request URL: {RequestUrl}. Request Body: {RequestBody}. Response: {ResponseBody}",
-                (int)response.StatusCode, requestUrl, requestJson, errorBody);
+                (int)response.StatusCode, requestUrl, truncatedRequestJson, truncatedErrorBody);
             response.EnsureSuccessStatusCode();
         }
 
