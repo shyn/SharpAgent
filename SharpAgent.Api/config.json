@@ -1,0 +1,14 @@
+{
+  "provider": "anthropic",
+  "openAi": {
+    "apiKey": null,
+    "baseUrl": "https://api.openai.com/v1/",
+    "model": "gpt-4o-mini"
+  },
+  "anthropic": {
+    "apiKey": "sk-cp-7IW5LIHEGN38q0Kzg0VE-nb_y4ZR6qa9TzFdksYLn_A4l1GJhcVCm4RN0MI-yVVde7buDhiwDw7qtbaFC8OuFeyQIx6tpEHq6lis_SEptojtAS4xV-zp_V0",
+    "baseUrl": "https://api.minimaxi.com/anthropic/v1/",
+    "model": "Mini-Max2.1",
+    "maxTokens": 81920
+  }
+}
