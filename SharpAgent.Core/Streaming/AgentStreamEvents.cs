@@ -3,6 +3,8 @@ namespace SharpAgent.Core.Streaming;
 public abstract record AgentStreamEvent;
 
 public sealed record AgentStartedEvent(string Goal) : AgentStreamEvent;
+public sealed record AgentThinkingDeltaEvent(string Thinking) : AgentStreamEvent;
+public sealed record AgentThinkingCompletedEvent(string FullThinking) : AgentStreamEvent;
 public sealed record AgentTextDeltaEvent(string Text) : AgentStreamEvent;
 public sealed record AgentToolUseStartedEvent(string ToolCallId, string ToolName) : AgentStreamEvent;
 public sealed record AgentToolUseArgumentsDeltaEvent(string ToolCallId, string PartialJson) : AgentStreamEvent;

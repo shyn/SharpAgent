@@ -18,7 +18,9 @@ public interface ILlmClient
 public abstract record LlmStreamEvent;
 
 public sealed record LlmTextDeltaEvent(string Text) : LlmStreamEvent;
+public sealed record LlmThinkingDeltaEvent(string Thinking) : LlmStreamEvent;
+public sealed record LlmThinkingCompletedEvent(string FullThinking) : LlmStreamEvent;
 public sealed record LlmToolUseStartedEvent(string Id, string Name) : LlmStreamEvent;
 public sealed record LlmToolUseArgumentsDeltaEvent(string Id, string PartialJson) : LlmStreamEvent;
 public sealed record LlmToolUseCompletedEvent(string Id) : LlmStreamEvent;
-public sealed record LlmMessageCompletedEvent(string? FullText, IReadOnlyList<ToolCall>? ToolCalls) : LlmStreamEvent;
+public sealed record LlmMessageCompletedEvent(string? FullText, string? FullThinking, IReadOnlyList<ToolCall>? ToolCalls) : LlmStreamEvent;

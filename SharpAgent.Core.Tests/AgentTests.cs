@@ -26,7 +26,7 @@ public class AgentTests
             }
         }
 
-        yield return new LlmMessageCompletedEvent(content, toolCalls);
+        yield return new LlmMessageCompletedEvent(content, null, toolCalls);
         await Task.CompletedTask;
     }
 

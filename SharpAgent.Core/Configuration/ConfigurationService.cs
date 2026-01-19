@@ -144,7 +144,7 @@ public sealed class ConfigurationService
             config.Anthropic.Model = anthropicModel;
     }
 
-    public (HttpClient HttpClient, ILlmClient LlmClient) CreateLlmClient()
+    public (HttpClient HttpClient, ILlmClient LlmClient) CreateLlmClient(ThinkingConfig? thinkingConfig = null)
     {
         var isAnthropic = _effectiveConfig.Provider.Equals("anthropic", StringComparison.OrdinalIgnoreCase);
 
@@ -163,7 +163,7 @@ public sealed class ConfigurationService
                 }
             };
 
-            return (httpClient, new AnthropicClient(httpClient, _effectiveConfig.Anthropic.Model, _effectiveConfig.Anthropic.MaxTokens));
+            return (httpClient, new AnthropicClient(httpClient, _effectiveConfig.Anthropic.Model, _effectiveConfig.Anthropic.MaxTokens, thinkingConfig));
         }
         else
         {

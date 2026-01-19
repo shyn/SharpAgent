@@ -30,7 +30,7 @@ if (!configService.HasApiKey())
 
 var (httpClient, llmClient) = configService.CreateLlmClient();
 
-var tools = new ITool[] { new CalculatorTool(), new ReadFileTool(), new ListFilesTool(), new BashTool() };
+var tools = new ITool[] { new CalculatorTool(), new ReadFileTool(), new ListFilesTool(), new BashTool(), new GlobTool(), new GrepTool() };
 var agentLogger = loggerFactory.CreateLogger<Agent>();
 var agent = new Agent(llmClient, tools, logger: agentLogger);
 

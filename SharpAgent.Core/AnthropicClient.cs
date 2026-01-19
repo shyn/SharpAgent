@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using SharpAgent.Core.Configuration;
 
 namespace SharpAgent.Core;
 
@@ -13,6 +14,7 @@ public sealed class AnthropicClient : ILlmClient
     private readonly HttpClient _httpClient;
     private readonly string _model;
     private readonly int _maxTokens;
+    private readonly ThinkingConfig _thinkingConfig;
     private readonly ILogger<AnthropicClient> _logger;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -25,11 +27,13 @@ public sealed class AnthropicClient : ILlmClient
         HttpClient httpClient,
         string model = "claude-sonnet-4-20250514",
         int maxTokens = 8192,
+        ThinkingConfig? thinkingConfig = null,
         ILogger<AnthropicClient>? logger = null)
     {
         _httpClient = httpClient;
         _model = model;
         _maxTokens = maxTokens;
+        _thinkingConfig = thinkingConfig ?? new ThinkingConfig();
         _logger = logger ?? NullLogger<AnthropicClient>.Instance;
     }
 
@@ -45,7 +49,7 @@ public sealed class AnthropicClient : ILlmClient
                 completed = msg;
         }
 
-        return new LlmResponse(completed?.FullText, completed?.ToolCalls);
+        return new LlmResponse(completed?.FullText, completed?.FullThinking, completed?.ToolCalls);
     }
 
     public async IAsyncEnumerable<LlmStreamEvent> StreamCompletionAsync(
@@ -63,7 +67,10 @@ public sealed class AnthropicClient : ILlmClient
             System = systemMessage,
             Messages = nonSystemMessages.Select(ToAnthropicMessage).ToList(),
             Tools = tools.Count > 0 ? tools.Select(ToAnthropicTool).ToList() : null,
-            Stream = true
+            Stream = true,
+            Thinking = _thinkingConfig.Enabled 
+                ? new AnthropicThinkingConfig { Type = "enabled", BudgetTokens = _thinkingConfig.BudgetTokens }
+                : null
         };
 
         var requestJson = JsonSerializer.Serialize(request, JsonOptions);
@@ -74,13 +81,20 @@ public sealed class AnthropicClient : ILlmClient
             Content = new StringContent(requestJson, Encoding.UTF8, "application/json")
         };
 
+        // Add interleaved thinking header if thinking is enabled
+        if (_thinkingConfig.Enabled)
+        {
+            httpRequest.Headers.Add("anthropic-beta", "interleaved-thinking-2025-05-14");
+        }
+
         using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
 
         if (!response.IsSuccessStatusCode)
         {
             var errorBody = await response.Content.ReadAsStringAsync(ct);
-            _logger.LogError("HTTP {StatusCode} from {Url}: {Body}",
-                (int)response.StatusCode, _httpClient.BaseAddress + "messages", errorBody);
+            var requestUrl = _httpClient.BaseAddress + "messages";
+            _logger.LogError("HTTP {StatusCode} error. Request URL: {RequestUrl}. Request Body: {RequestBody}. Response: {ResponseBody}",
+                (int)response.StatusCode, requestUrl, requestJson, errorBody);
             response.EnsureSuccessStatusCode();
         }
 
@@ -95,11 +109,13 @@ public sealed class AnthropicClient : ILlmClient
         }
 
         var content = state.TextBuilder.ToString();
-        _logger.LogDebug("Streamed response complete. Content length: {Length}, ToolCalls: {Count}",
-            content.Length, state.ToolCalls.Count);
+        var thinking = state.ThinkingBuilder.ToString();
+        _logger.LogDebug("Streamed response complete. Content length: {Length}, Thinking length: {ThinkingLength}, ToolCalls: {Count}",
+            content.Length, thinking.Length, state.ToolCalls.Count);
 
         yield return new LlmMessageCompletedEvent(
             string.IsNullOrEmpty(content) ? null : content,
+            string.IsNullOrEmpty(thinking) ? null : thinking,
             state.ToolCalls.Count > 0 ? state.ToolCalls : null);
     }
 
@@ -136,8 +152,10 @@ public sealed class AnthropicClient : ILlmClient
     private sealed class StreamState
     {
         public StringBuilder TextBuilder { get; } = new();
+        public StringBuilder ThinkingBuilder { get; } = new();
         public List<ToolCall> ToolCalls { get; } = [];
         public int CurrentToolIndex { get; set; } = -1;
+        public bool IsInThinkingBlock { get; set; } = false;
     }
 
     private IEnumerable<LlmStreamEvent> ProcessStreamEventToEvents(SseEvent evt, StreamState state)
@@ -154,7 +172,16 @@ public sealed class AnthropicClient : ILlmClient
                     var id = blockStart.ContentBlock.Id ?? string.Empty;
                     var name = blockStart.ContentBlock.Name ?? string.Empty;
                     state.ToolCalls.Add(new ToolCall(id, name, string.Empty));
+                    state.IsInThinkingBlock = false;
                     yield return new LlmToolUseStartedEvent(id, name);
+                }
+                else if (blockStart?.ContentBlock?.Type == "thinking")
+                {
+                    state.IsInThinkingBlock = true;
+                }
+                else if (blockStart?.ContentBlock?.Type == "text")
+                {
+                    state.IsInThinkingBlock = false;
                 }
                 break;
 
@@ -165,6 +192,12 @@ public sealed class AnthropicClient : ILlmClient
                     var text = delta.Delta.Text ?? string.Empty;
                     state.TextBuilder.Append(text);
                     yield return new LlmTextDeltaEvent(text);
+                }
+                else if (delta?.Delta?.Type == "thinking_delta")
+                {
+                    var thinking = delta.Delta.Thinking ?? string.Empty;
+                    state.ThinkingBuilder.Append(thinking);
+                    yield return new LlmThinkingDeltaEvent(thinking);
                 }
                 else if (delta?.Delta?.Type == "input_json_delta" && state.ToolCalls.Count > 0)
                 {
@@ -179,7 +212,16 @@ public sealed class AnthropicClient : ILlmClient
                 break;
 
             case "content_block_stop":
-                if (state.CurrentToolIndex >= 0 && state.ToolCalls.Count > 0)
+                if (state.IsInThinkingBlock)
+                {
+                    var fullThinking = state.ThinkingBuilder.ToString();
+                    if (!string.IsNullOrEmpty(fullThinking))
+                    {
+                        yield return new LlmThinkingCompletedEvent(fullThinking);
+                    }
+                    state.IsInThinkingBlock = false;
+                }
+                else if (state.CurrentToolIndex >= 0 && state.ToolCalls.Count > 0)
                 {
                     yield return new LlmToolUseCompletedEvent(state.ToolCalls[^1].Id);
                     state.CurrentToolIndex = -1;
@@ -215,6 +257,12 @@ public sealed class AnthropicClient : ILlmClient
     private static object[] CreateAssistantContent(Message m)
     {
         var content = new List<object>();
+
+        // Add thinking block if present
+        if (!string.IsNullOrEmpty(m.Thinking))
+        {
+            content.Add(new AnthropicThinkingContent { Type = "thinking", Thinking = m.Thinking, Signature = "" });
+        }
 
         if (!string.IsNullOrEmpty(m.Content))
         {
@@ -252,6 +300,13 @@ public sealed class AnthropicClient : ILlmClient
         public required List<AnthropicMessage> Messages { get; init; }
         public List<AnthropicTool>? Tools { get; init; }
         public bool Stream { get; init; }
+        public AnthropicThinkingConfig? Thinking { get; init; }
+    }
+
+    private sealed class AnthropicThinkingConfig
+    {
+        public required string Type { get; init; }
+        public int BudgetTokens { get; init; }
     }
 
     private sealed class AnthropicMessage
@@ -264,6 +319,13 @@ public sealed class AnthropicClient : ILlmClient
     {
         public required string Type { get; init; }
         public required string Text { get; init; }
+    }
+
+    private sealed class AnthropicThinkingContent
+    {
+        public required string Type { get; init; }
+        public required string Thinking { get; init; }
+        public required string Signature { get; init; }
     }
 
     private sealed class AnthropicToolUse
@@ -311,6 +373,7 @@ public sealed class AnthropicClient : ILlmClient
     {
         public string? Type { get; init; }
         public string? Text { get; init; }
+        public string? Thinking { get; init; }
         public string? PartialJson { get; init; }
     }
 }

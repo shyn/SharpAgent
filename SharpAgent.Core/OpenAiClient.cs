@@ -62,7 +62,7 @@ public sealed class OpenAiClient : ILlmClient
         var toolCalls = choice.ToolCalls?.Select(tc => 
             new ToolCall(tc.Id, tc.Function.Name, tc.Function.Arguments)).ToList();
 
-        return new LlmResponse(choice.Content, toolCalls);
+        return new LlmResponse(choice.Content, null, toolCalls);
     }
 
     public async IAsyncEnumerable<LlmStreamEvent> StreamCompletionAsync(
@@ -87,7 +87,7 @@ public sealed class OpenAiClient : ILlmClient
             }
         }
         
-        yield return new LlmMessageCompletedEvent(response.Content, response.ToolCalls);
+        yield return new LlmMessageCompletedEvent(response.Content, null, response.ToolCalls);
     }
 
     private static OpenAiMessage ToOpenAiMessage(Message m) => m.Role switch

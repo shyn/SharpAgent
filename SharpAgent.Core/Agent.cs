@@ -62,12 +62,21 @@ public sealed class Agent : IAgent
             _logger.LogDebug("Sending {MessageCount} messages to LLM", messages.Count);
 
             var textBuilder = new System.Text.StringBuilder();
+            var thinkingBuilder = new System.Text.StringBuilder();
             IReadOnlyList<ToolCall>? toolCalls = null;
+            string? thinking = null;
 
             await foreach (var llmEvent in _llmClient.StreamCompletionAsync(messages, _tools, ct))
             {
                 switch (llmEvent)
                 {
+                    case LlmThinkingDeltaEvent thinkingDelta:
+                        thinkingBuilder.Append(thinkingDelta.Thinking);
+                        yield return new AgentThinkingDeltaEvent(thinkingDelta.Thinking);
+                        break;
+                    case LlmThinkingCompletedEvent thinkingCompleted:
+                        yield return new AgentThinkingCompletedEvent(thinkingCompleted.FullThinking);
+                        break;
                     case LlmTextDeltaEvent delta:
                         textBuilder.Append(delta.Text);
                         yield return new AgentTextDeltaEvent(delta.Text);
@@ -83,11 +92,13 @@ public sealed class Agent : IAgent
                         break;
                     case LlmMessageCompletedEvent completed:
                         toolCalls = completed.ToolCalls;
+                        thinking = completed.FullThinking;
                         break;
                 }
             }
 
             var content = textBuilder.ToString();
+            var thinkingContent = thinkingBuilder.ToString();
             _logger.LogDebug("LLM response: Content={Content}, ToolCalls={ToolCallCount}",
                 content.Length > 100 ? content[..100] + "..." : content,
                 toolCalls?.Count ?? 0);
@@ -99,7 +110,7 @@ public sealed class Agent : IAgent
                 yield break;
             }
 
-            messages.Add(new Message(Role.Assistant, content, ToolCalls: toolCalls));
+            messages.Add(new Message(Role.Assistant, content, ToolCalls: toolCalls, Thinking: thinkingContent));
 
             foreach (var toolCall in toolCalls)
             {
