@@ -1,4 +1,5 @@
 using SharpAgent.Core.Configuration;
+using System.Drawing.Drawing2D;
 
 namespace SharpAgent.WinForms;
 
@@ -19,37 +20,39 @@ public sealed class ConfigDialog : Form
         _configService = configService;
 
         Text = "Settings";
-        Size = new Size(500, 480);
+        Size = new Size(520, 540);
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        BackColor = Color.FromArgb(30, 30, 33);
+        BackColor = Theme.Background;
 
         var mainPanel = new Panel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(20),
-            AutoScroll = true
+            Padding = new Padding(Theme.GutterLarge + Theme.SpacingSmall),
+            AutoScroll = true,
+            BackColor = Color.Transparent
         };
 
-        var y = 10;
+        var y = Theme.Gutter;
 
         AddLabel(mainPanel, "Provider:", ref y);
         _providerCombo = new ComboBox
         {
-            Location = new Point(20, y),
-            Width = 200,
+            Location = new Point(Theme.GutterLarge + Theme.SpacingSmall, y),
+            Width = 220,
             DropDownStyle = ComboBoxStyle.DropDownList,
-            BackColor = Color.FromArgb(50, 50, 55),
-            ForeColor = Color.White,
-            FlatStyle = FlatStyle.Flat
+            BackColor = Theme.BackgroundTertiary,
+            ForeColor = Theme.TextPrimary,
+            FlatStyle = FlatStyle.Flat,
+            Font = Theme.FontRegular
         };
         _providerCombo.Items.AddRange(["openai", "anthropic"]);
         mainPanel.Controls.Add(_providerCombo);
-        y += 35;
+        y += Theme.GutterLarge * 2;
 
-        AddSeparator(mainPanel, "OpenAI Settings", ref y);
+        AddSectionHeader(mainPanel, "OpenAI Settings", ref y);
 
         AddLabel(mainPanel, "API Key:", ref y);
         _openAiKeyBox = CreateTextBox(mainPanel, ref y, true);
@@ -60,7 +63,7 @@ public sealed class ConfigDialog : Form
         AddLabel(mainPanel, "Model:", ref y);
         _openAiModelBox = CreateTextBox(mainPanel, ref y);
 
-        AddSeparator(mainPanel, "Anthropic Settings", ref y);
+        AddSectionHeader(mainPanel, "Anthropic Settings", ref y);
 
         AddLabel(mainPanel, "API Key:", ref y);
         _anthropicKeyBox = CreateTextBox(mainPanel, ref y, true);
@@ -74,49 +77,37 @@ public sealed class ConfigDialog : Form
         AddLabel(mainPanel, "Max Tokens:", ref y);
         _anthropicMaxTokensBox = new NumericUpDown
         {
-            Location = new Point(20, y),
-            Width = 150,
+            Location = new Point(Theme.GutterLarge + Theme.SpacingSmall, y),
+            Width = 180,
             Minimum = 1024,
             Maximum = 200000,
-            BackColor = Color.FromArgb(50, 50, 55),
-            ForeColor = Color.White
+            BackColor = Theme.BackgroundTertiary,
+            ForeColor = Theme.TextPrimary,
+            Font = Theme.FontRegular,
+            BorderStyle = BorderStyle.FixedSingle
         };
         mainPanel.Controls.Add(_anthropicMaxTokensBox);
-        y += 35;
+        y += Theme.GutterLarge * 2;
 
         Controls.Add(mainPanel);
 
         var buttonPanel = new Panel
         {
             Dock = DockStyle.Bottom,
-            Height = 50,
-            BackColor = Color.FromArgb(35, 35, 38)
+            Height = 60,
+            BackColor = Theme.BackgroundSecondary
+        };
+        
+        buttonPanel.Paint += (s, e) =>
+        {
+            using var borderPen = new Pen(Theme.BorderSubtle, 1);
+            e.Graphics.DrawLine(borderPen, 0, 0, buttonPanel.Width, 0);
         };
 
-        var saveButton = new Button
-        {
-            Text = "Save",
-            Size = new Size(80, 32),
-            Location = new Point(Width - 200, 9),
-            BackColor = Color.FromArgb(0, 122, 255),
-            ForeColor = Color.White,
-            FlatStyle = FlatStyle.Flat,
-            Anchor = AnchorStyles.Right
-        };
-        saveButton.FlatAppearance.BorderSize = 0;
+        var saveButton = CreateModernButton("Save", Theme.AccentPrimary, Width - 210, Theme.GutterSmall);
         saveButton.Click += SaveButton_Click;
 
-        var cancelButton = new Button
-        {
-            Text = "Cancel",
-            Size = new Size(80, 32),
-            Location = new Point(Width - 105, 9),
-            BackColor = Color.FromArgb(60, 60, 65),
-            ForeColor = Color.White,
-            FlatStyle = FlatStyle.Flat,
-            Anchor = AnchorStyles.Right
-        };
-        cancelButton.FlatAppearance.BorderSize = 0;
+        var cancelButton = CreateModernButton("Cancel", Theme.ButtonDefault, Width - 110, Theme.GutterSmall);
         cancelButton.Click += (_, _) => Close();
 
         buttonPanel.Controls.Add(saveButton);
@@ -126,47 +117,95 @@ public sealed class ConfigDialog : Form
         LoadConfig();
     }
 
+    private static Button CreateModernButton(string text, Color bgColor, int x, int y)
+    {
+        var btn = new Button
+        {
+            Text = text,
+            Size = Theme.ButtonSize,
+            Location = new Point(x, y),
+            BackColor = bgColor,
+            ForeColor = Theme.TextPrimary,
+            FlatStyle = FlatStyle.Flat,
+            Font = Theme.FontMedium,
+            Cursor = Cursors.Hand
+        };
+        btn.FlatAppearance.BorderSize = 0;
+        return btn;
+    }
+
     private void AddLabel(Panel parent, string text, ref int y)
     {
         var label = new Label
         {
             Text = text,
-            Location = new Point(20, y),
+            Location = new Point(Theme.GutterLarge + Theme.SpacingSmall, y),
             AutoSize = true,
-            ForeColor = Color.FromArgb(180, 180, 185)
+            ForeColor = Theme.TextSecondary,
+            Font = Theme.FontRegular
         };
         parent.Controls.Add(label);
-        y += 20;
+        y += 22;
     }
 
-    private void AddSeparator(Panel parent, string title, ref int y)
+    private void AddSectionHeader(Panel parent, string title, ref int y)
     {
-        y += 10;
+        y += Theme.SpacingSmall;
+
+        var headerPanel = new Panel
+        {
+            Location = new Point(Theme.GutterSmall, y),
+            Size = new Size(parent.Width - Theme.GutterLarge * 2, 32),
+            BackColor = Theme.BackgroundSecondary
+        };
+        headerPanel.Paint += (s, e) =>
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using var brush = new SolidBrush(Theme.BackgroundSecondary);
+            using var path = CreateRoundedRectPath(0, 0, headerPanel.Width, headerPanel.Height, Theme.CornerRadiusSmall);
+            e.Graphics.FillPath(brush, path);
+        };
+
         var label = new Label
         {
             Text = title,
-            Location = new Point(20, y),
+            Location = new Point(Theme.GutterSmall, 6),
             AutoSize = true,
-            Font = new Font(Font, FontStyle.Bold),
-            ForeColor = Color.FromArgb(100, 180, 255)
+            Font = Theme.FontMedium,
+            ForeColor = Theme.FocusRing,
+            BackColor = Color.Transparent
         };
-        parent.Controls.Add(label);
-        y += 25;
+        headerPanel.Controls.Add(label);
+        parent.Controls.Add(headerPanel);
+        y += 32 + Theme.Gutter;
+    }
+
+    private static GraphicsPath CreateRoundedRectPath(int x, int y, int width, int height, int radius)
+    {
+        var path = new GraphicsPath();
+        var diameter = radius * 2;
+        path.AddArc(x, y, diameter, diameter, 180, 90);
+        path.AddArc(x + width - diameter, y, diameter, diameter, 270, 90);
+        path.AddArc(x + width - diameter, y + height - diameter, diameter, diameter, 0, 90);
+        path.AddArc(x, y + height - diameter, diameter, diameter, 90, 90);
+        path.CloseFigure();
+        return path;
     }
 
     private TextBox CreateTextBox(Panel parent, ref int y, bool isPassword = false)
     {
         var box = new TextBox
         {
-            Location = new Point(20, y),
-            Width = 420,
-            BackColor = Color.FromArgb(50, 50, 55),
-            ForeColor = Color.White,
-            BorderStyle = BorderStyle.FixedSingle
+            Location = new Point(Theme.GutterLarge + Theme.SpacingSmall, y),
+            Width = 440,
+            BackColor = Theme.BackgroundTertiary,
+            ForeColor = Theme.TextPrimary,
+            BorderStyle = BorderStyle.FixedSingle,
+            Font = Theme.FontRegular
         };
         if (isPassword) box.UseSystemPasswordChar = true;
         parent.Controls.Add(box);
-        y += 30;
+        y += Theme.ButtonSize.Height;
         return box;
     }
 
@@ -183,7 +222,14 @@ public sealed class ConfigDialog : Form
         _anthropicKeyBox.Text = config.Anthropic.ApiKey ?? "";
         _anthropicBaseUrlBox.Text = config.Anthropic.BaseUrl;
         _anthropicModelBox.Text = config.Anthropic.Model;
-        _anthropicMaxTokensBox.Value = config.Anthropic.MaxTokens;
+        
+        // Safely set MaxTokens value within valid range
+        var maxTokens = config.Anthropic.MaxTokens;
+        if (maxTokens < _anthropicMaxTokensBox.Minimum)
+            maxTokens = (int)_anthropicMaxTokensBox.Minimum;
+        if (maxTokens > _anthropicMaxTokensBox.Maximum)
+            maxTokens = (int)_anthropicMaxTokensBox.Maximum;
+        _anthropicMaxTokensBox.Value = maxTokens;
     }
 
     private void SaveButton_Click(object? sender, EventArgs e)

@@ -8,7 +8,7 @@ public class ToolCallCard : Control
     private readonly string _arguments;
     private string? _result;
     private bool? _isError;
-    private bool _isExpanded = true;
+    private bool _isExpanded = false;
 
     private readonly Label _headerLabel;
     private readonly Label _statusLabel;
@@ -19,11 +19,15 @@ public class ToolCallCard : Control
     private readonly Button _toggleButton;
     private readonly int _maxWidth;
 
-    private static readonly Color CardBackground = Color.FromArgb(45, 45, 50);
-    private static readonly Color HeaderColor = Color.FromArgb(255, 180, 70);
-    private static readonly Color RunningColor = Color.FromArgb(100, 180, 255);
-    private static readonly Color SuccessColor = Color.FromArgb(80, 200, 120);
-    private static readonly Color ErrorColor = Color.FromArgb(255, 100, 100);
+    private static readonly Color CardBackgroundStart = Theme.BackgroundTertiary;
+    private static readonly Color CardBackgroundEnd = Theme.BackgroundSecondary;
+    private static readonly Color CardBorder = Theme.BorderSubtle;
+    private static readonly Color HeaderColor = Color.FromArgb(200, 120, 0); // Darker Orange
+    private static readonly Color RunningColor = Theme.FocusRing;
+    private static readonly Color SuccessColor = Color.FromArgb(0, 150, 60); // Darker Green
+    private static readonly Color ErrorColor = Theme.Error;
+    private static readonly Color CodeBackground = Theme.Background;
+    private static readonly Color CodeBorder = Theme.BorderSubtle;
 
     public ToolCallCard(string toolName, string arguments, int maxWidth = 600)
     {
@@ -31,38 +35,43 @@ public class ToolCallCard : Control
         _arguments = arguments;
         _maxWidth = maxWidth;
 
-        SetStyle(ControlStyles.SupportsTransparentBackColor, true);
+        SetStyle(ControlStyles.SupportsTransparentBackColor | 
+                 ControlStyles.OptimizedDoubleBuffer | 
+                 ControlStyles.AllPaintingInWmPaint, true);
         DoubleBuffered = true;
         BackColor = Color.Transparent;
 
         _toggleButton = new Button
         {
-            Text = "▼",
-            Size = new Size(24, 24),
+            Text = "▶",
+            Size = new Size(28, 28),
             FlatStyle = FlatStyle.Flat,
-            Font = new Font("Segoe UI", 8),
-            ForeColor = Color.Gray,
+            Font = Theme.FontSmall,
+            ForeColor = Theme.TextMuted,
             BackColor = Color.Transparent,
             Cursor = Cursors.Hand
         };
         _toggleButton.FlatAppearance.BorderSize = 0;
-        _toggleButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(60, 60, 65);
+        _toggleButton.FlatAppearance.MouseOverBackColor = Theme.ButtonHover;
+        _toggleButton.FlatAppearance.MouseDownBackColor = Theme.ButtonPressed;
         _toggleButton.Click += (_, _) => ToggleExpand();
 
         _headerLabel = new Label
         {
             Text = $"🔧 {toolName}",
-            Font = new Font("Segoe UI", 10, FontStyle.Bold),
+            Font = Theme.FontMedium,
             ForeColor = HeaderColor,
             AutoSize = true,
             BackColor = Color.Transparent,
-            Location = new Point(12, 10)
+            Location = new Point(14, Theme.GutterSmall),
+            Cursor = Cursors.Hand
         };
+        _headerLabel.Click += (_, _) => ToggleExpand();
 
         _statusLabel = new Label
         {
             Text = "Running...",
-            Font = new Font("Segoe UI", 9),
+            Font = Theme.FontSmall,
             ForeColor = RunningColor,
             AutoSize = true,
             BackColor = Color.Transparent
@@ -71,26 +80,26 @@ public class ToolCallCard : Control
         _contentPanel = new Panel
         {
             BackColor = Color.Transparent,
-            Location = new Point(12, 38),
-            AutoSize = false
+            Location = new Point(14, 44),
+            AutoSize = false,
+            Visible = false
         };
 
         _argsLabel = new Label
         {
             Text = FormatJson(arguments),
-            Font = new Font("Consolas", 9),
-            ForeColor = Color.FromArgb(180, 180, 185),
-            AutoSize = false,
-            BackColor = Color.FromArgb(35, 35, 40),
-            Padding = new Padding(8, 6, 8, 6),
-            MaximumSize = new Size(maxWidth - 40, 0)
+            Font = Theme.FontMono,
+            ForeColor = Theme.TextSecondary,
+            AutoSize = false, // Manual size for better control
+            BackColor = CodeBackground,
+            Padding = new Padding(10, Theme.SpacingSmall, 10, Theme.SpacingSmall)
         };
 
         _resultTitleLabel = new Label
         {
             Text = "Result:",
-            Font = new Font("Segoe UI", 9, FontStyle.Bold),
-            ForeColor = Color.FromArgb(150, 150, 155),
+            Font = Theme.FontSmall,
+            ForeColor = Theme.TextMuted,
             AutoSize = true,
             BackColor = Color.Transparent,
             Visible = false
@@ -98,12 +107,11 @@ public class ToolCallCard : Control
 
         _resultLabel = new Label
         {
-            Font = new Font("Consolas", 9),
-            ForeColor = Color.FromArgb(180, 180, 185),
-            AutoSize = false,
-            BackColor = Color.FromArgb(35, 35, 40),
-            Padding = new Padding(8, 6, 8, 6),
-            MaximumSize = new Size(maxWidth - 40, 0),
+            Font = Theme.FontMono,
+            ForeColor = Theme.TextSecondary,
+            AutoSize = false, // Manual size for better control
+            BackColor = CodeBackground,
+            Padding = new Padding(10, Theme.SpacingSmall, 10, Theme.SpacingSmall),
             Visible = false
         };
 
@@ -133,7 +141,7 @@ public class ToolCallCard : Control
 
         _resultLabel.Visible = true;
         _resultLabel.Text = TruncateResult(result, 1000);
-        _resultLabel.ForeColor = isError ? Color.FromArgb(255, 180, 180) : Color.FromArgb(180, 200, 180);
+        _resultLabel.ForeColor = isError ? Color.FromArgb(255, 190, 190) : Color.FromArgb(190, 210, 190);
 
         UpdateLayout();
     }
@@ -148,40 +156,57 @@ public class ToolCallCard : Control
 
     private void UpdateLayout()
     {
-        _statusLabel.Location = new Point(_headerLabel.Right + 12, _headerLabel.Top + 2);
-        _toggleButton.Location = new Point(_maxWidth - 40, 8);
+        _statusLabel.Location = new Point(_headerLabel.Right + 14, _headerLabel.Top + 2);
+        _toggleButton.Location = new Point(_maxWidth - 46, 10);
 
         if (!_isExpanded)
         {
-            Size = new Size(_maxWidth - 16, 40);
+            Size = new Size(_maxWidth - 16, 48);
             Invalidate();
             return;
         }
 
-        using var g = CreateGraphics();
-
-        var argsSize = TextRenderer.MeasureText(g, _argsLabel.Text, _argsLabel.Font,
-            new Size(_maxWidth - 56, int.MaxValue), TextFormatFlags.WordBreak);
-        _argsLabel.Size = new Size(Math.Min(argsSize.Width + 20, _maxWidth - 40), argsSize.Height + 16);
+        var availableWidth = _maxWidth - 60;
+        
+        // Measure args text
+        Size argsSize;
+        using (var g = CreateGraphics())
+        {
+            argsSize = TextRenderer.MeasureText(g, _argsLabel.Text, _argsLabel.Font,
+                new Size(availableWidth, int.MaxValue), TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl);
+        }
+        
+        var argsHeight = Math.Min(argsSize.Height + 20, 300); // Max 300px for args
+        _argsLabel.Size = new Size(availableWidth, argsHeight);
         _argsLabel.Location = new Point(0, 0);
 
-        var contentHeight = _argsLabel.Bottom;
+        var contentHeight = argsHeight;
 
         if (_resultLabel.Visible)
         {
-            _resultTitleLabel.Location = new Point(0, _argsLabel.Bottom + 10);
+            _resultTitleLabel.Location = new Point(0, contentHeight + 14);
 
-            var resultSize = TextRenderer.MeasureText(g, _resultLabel.Text, _resultLabel.Font,
-                new Size(_maxWidth - 56, int.MaxValue), TextFormatFlags.WordBreak);
-            _resultLabel.Size = new Size(Math.Min(resultSize.Width + 20, _maxWidth - 40), Math.Min(resultSize.Height + 16, 200));
-            _resultLabel.Location = new Point(0, _resultTitleLabel.Bottom + 4);
-
+            // Measure result text
+            Size resultSize;
+            using (var g = CreateGraphics())
+            {
+                resultSize = TextRenderer.MeasureText(g, _resultLabel.Text, _resultLabel.Font,
+                    new Size(availableWidth, int.MaxValue), TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl);
+            }
+            
+            var resultHeight = Math.Min(resultSize.Height + 20, 200); // Max 200px for results
+            _resultLabel.Size = new Size(availableWidth, resultHeight);
+            _resultLabel.Location = new Point(0, _resultTitleLabel.Bottom + 6);
+            
             contentHeight = _resultLabel.Bottom;
         }
 
-        _contentPanel.Size = new Size(_maxWidth - 24, contentHeight);
-
-        Size = new Size(_maxWidth - 16, _contentPanel.Bottom + 12);
+        _contentPanel.Size = new Size(_maxWidth - 28, contentHeight + 8);
+        Size = new Size(_maxWidth - 16, 44 + contentHeight + 24);
+        
+        // Trigger parent layout update
+        Parent?.PerformLayout();
+        
         Invalidate();
     }
 
@@ -192,23 +217,33 @@ public class ToolCallCard : Control
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
 
         var rect = new Rectangle(0, 0, Width - 1, Height - 1);
-        using var path = CreateRoundedRectangle(rect, 8);
-        using var brush = new SolidBrush(CardBackground);
-        using var pen = new Pen(Color.FromArgb(70, 70, 75), 1);
+        using var path = CreateRoundedRectangle(rect, Theme.CornerRadius);
+        using var gradientBrush = new LinearGradientBrush(
+            rect, CardBackgroundStart, CardBackgroundEnd, LinearGradientMode.Vertical);
+        using var borderPen = new Pen(CardBorder, 1);
 
-        e.Graphics.FillPath(brush, path);
-        e.Graphics.DrawPath(pen, path);
+        e.Graphics.FillPath(gradientBrush, path);
+        e.Graphics.DrawPath(borderPen, path);
+        
+        using var highlightPen = new Pen(Color.FromArgb(30, 255, 255, 255), 1);
+        e.Graphics.DrawLine(highlightPen, Theme.CornerRadius, 1, Width - Theme.CornerRadius - 1, 1);
     }
 
     private static GraphicsPath CreateRoundedRectangle(Rectangle bounds, int radius)
     {
         var path = new GraphicsPath();
-        var diameter = radius * 2;
+        if (bounds.Width < 1 || bounds.Height < 1) return path;
+        
+        var diameter = Math.Min(radius * 2, Math.Min(bounds.Width, bounds.Height));
+        var arc = new Rectangle(bounds.Location, new Size(diameter, diameter));
 
-        path.AddArc(bounds.X, bounds.Y, diameter, diameter, 180, 90);
-        path.AddArc(bounds.Right - diameter, bounds.Y, diameter, diameter, 270, 90);
-        path.AddArc(bounds.Right - diameter, bounds.Bottom - diameter, diameter, diameter, 0, 90);
-        path.AddArc(bounds.X, bounds.Bottom - diameter, diameter, diameter, 90, 90);
+        path.AddArc(arc, 180, 90);
+        arc.X = bounds.Right - diameter;
+        path.AddArc(arc, 270, 90);
+        arc.Y = bounds.Bottom - diameter;
+        path.AddArc(arc, 0, 90);
+        arc.X = bounds.Left;
+        path.AddArc(arc, 90, 90);
         path.CloseFigure();
 
         return path;
@@ -234,5 +269,20 @@ public class ToolCallCard : Control
     {
         if (result.Length <= maxLength) return result;
         return result[..maxLength] + "\n... (truncated)";
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _headerLabel.Dispose();
+            _statusLabel.Dispose();
+            _argsLabel.Dispose();
+            _resultTitleLabel.Dispose();
+            _resultLabel.Dispose();
+            _toggleButton.Dispose();
+            _contentPanel.Dispose();
+        }
+        base.Dispose(disposing);
     }
 }
