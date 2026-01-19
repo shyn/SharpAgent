@@ -41,9 +41,10 @@ var jsonOptions = new JsonSerializerOptions
 
 app.MapGet("/api/config", (ConfigurationService configService) =>
 {
+    var (providerId, modelId) = ConfigurationService.ParseModelString(configService.Config.DefaultModel);
     return new ConfigResponse
     {
-        Provider = configService.Config.Provider,
+        Provider = providerId,
         Model = configService.GetCurrentModelName(),
         HasApiKey = configService.HasApiKey()
     };
@@ -59,8 +60,13 @@ app.MapPost("/api/chat", async (HttpContext context, ConfigurationService config
         return;
     }
 
+    // Determine model string from request or use default
+    var modelString = !string.IsNullOrWhiteSpace(request.Model) 
+        ? (request.Model.Contains('/') ? request.Model : $"{request.Provider ?? "openai"}/{request.Model}")
+        : configService.Config.DefaultModel;
+
     var hasRequestApiKey = !string.IsNullOrWhiteSpace(request.ApiKey);
-    if (!hasRequestApiKey && !configService.HasApiKey())
+    if (!hasRequestApiKey && !configService.HasApiKey(modelString))
     {
         context.Response.StatusCode = 400;
         await context.Response.WriteAsJsonAsync(new { error = "API key not configured" }, ct);
@@ -68,7 +74,7 @@ app.MapPost("/api/chat", async (HttpContext context, ConfigurationService config
     }
 
     var thinkingConfig = ParseThinkingLevel(request.ThinkingLevel);
-    var (httpClient, llmClient) = CreateLlmClientFromRequest(request, configService, thinkingConfig);
+    var (httpClient, llmClient) = CreateLlmClientFromRequest(request, configService, modelString, thinkingConfig);
 
     try
     {
@@ -120,18 +126,23 @@ static ThinkingConfig ParseThinkingLevel(string level) => level.ToLowerInvariant
 static (HttpClient, ILlmClient) CreateLlmClientFromRequest(
     ChatRequest request, 
     ConfigurationService configService, 
+    string modelString,
     ThinkingConfig thinkingConfig)
 {
-    var provider = request.Provider?.ToLowerInvariant() ?? configService.Config.Provider;
-    var isAnthropic = provider == "anthropic";
-    
-    if (isAnthropic)
-    {
-        var apiKey = request.ApiKey ?? configService.Config.Anthropic.ApiKey ?? "";
-        var model = request.Model ?? configService.Config.Anthropic.Model;
-        var baseUrl = configService.Config.Anthropic.BaseUrl;
-        if (!baseUrl.EndsWith('/')) baseUrl += "/";
+    var modelConfig = configService.GetModelConfig(modelString);
+    if (modelConfig == null)
+        throw new InvalidOperationException($"Model not found: {modelString}");
 
+    var (provider, model) = modelConfig.Value;
+    var apiKey = request.ApiKey ?? provider.ApiKey ?? "";
+    var baseUrl = provider.BaseUrl;
+    if (!baseUrl.EndsWith('/')) baseUrl += "/";
+
+    var apiFormat = model.ApiFormats.FirstOrDefault();
+    var maxTokens = model.MaxOutputTokens ?? 8192;
+    
+    if (apiFormat == ApiFormat.Anthropic)
+    {
         var httpClient = new HttpClient
         {
             BaseAddress = new Uri(baseUrl),
@@ -141,23 +152,16 @@ static (HttpClient, ILlmClient) CreateLlmClientFromRequest(
                 { "anthropic-version", "2023-06-01" }
             }
         };
-
-        return (httpClient, new AnthropicClient(httpClient, model, configService.Config.Anthropic.MaxTokens, thinkingConfig));
+        return (httpClient, new AnthropicClient(httpClient, model.Id, maxTokens, thinkingConfig));
     }
     else
     {
-        var apiKey = request.ApiKey ?? configService.Config.OpenAi.ApiKey ?? "";
-        var model = request.Model ?? configService.Config.OpenAi.Model;
-        var baseUrl = configService.Config.OpenAi.BaseUrl;
-        if (!baseUrl.EndsWith('/')) baseUrl += "/";
-
         var httpClient = new HttpClient
         {
             BaseAddress = new Uri(baseUrl),
             DefaultRequestHeaders = { { "Authorization", $"Bearer {apiKey}" } }
         };
-
-        return (httpClient, new OpenAiClient(httpClient, model));
+        return (httpClient, new OpenAiClient(httpClient, model.Id));
     }
 }
 
@@ -176,3 +180,4 @@ static ChatEventDto? MapAgentEvent(AgentStreamEvent evt) => evt switch
     AgentErrorEvent e => new ChatEventDto { Type = "error", Data = new ErrorData { Message = e.Message } },
     _ => null
 };
+
