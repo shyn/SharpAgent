@@ -6,21 +6,18 @@ namespace SharpAgent.WinForms;
 public sealed class ConfigDialog : Form
 {
     private readonly ConfigurationService _configService;
-    private readonly ComboBox _providerCombo;
+    private readonly ComboBox _defaultModelCombo;
     private readonly TextBox _openAiKeyBox;
     private readonly TextBox _openAiBaseUrlBox;
-    private readonly TextBox _openAiModelBox;
     private readonly TextBox _anthropicKeyBox;
     private readonly TextBox _anthropicBaseUrlBox;
-    private readonly TextBox _anthropicModelBox;
-    private readonly NumericUpDown _anthropicMaxTokensBox;
 
     public ConfigDialog(ConfigurationService configService)
     {
         _configService = configService;
 
         Text = "Settings";
-        Size = new Size(520, 540);
+        Size = new Size(520, 480);
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -37,19 +34,27 @@ public sealed class ConfigDialog : Form
 
         var y = Theme.Gutter;
 
-        AddLabel(mainPanel, "Provider:", ref y);
-        _providerCombo = new ComboBox
+        AddLabel(mainPanel, "Default Model:", ref y);
+        _defaultModelCombo = new ComboBox
         {
             Location = new Point(Theme.GutterLarge + Theme.SpacingSmall, y),
-            Width = 220,
-            DropDownStyle = ComboBoxStyle.DropDownList,
+            Width = 300,
+            DropDownStyle = ComboBoxStyle.DropDown,
             BackColor = Theme.BackgroundTertiary,
             ForeColor = Theme.TextPrimary,
             FlatStyle = FlatStyle.Flat,
             Font = Theme.FontRegular
         };
-        _providerCombo.Items.AddRange(["openai", "anthropic"]);
-        mainPanel.Controls.Add(_providerCombo);
+        
+        // Populate with available models from all providers
+        foreach (var provider in configService.Config.Providers)
+        {
+            foreach (var model in provider.Models)
+            {
+                _defaultModelCombo.Items.Add($"{provider.Id}/{model.Id}");
+            }
+        }
+        mainPanel.Controls.Add(_defaultModelCombo);
         y += Theme.GutterLarge * 2;
 
         AddSectionHeader(mainPanel, "OpenAI Settings", ref y);
@@ -60,9 +65,6 @@ public sealed class ConfigDialog : Form
         AddLabel(mainPanel, "Base URL:", ref y);
         _openAiBaseUrlBox = CreateTextBox(mainPanel, ref y);
 
-        AddLabel(mainPanel, "Model:", ref y);
-        _openAiModelBox = CreateTextBox(mainPanel, ref y);
-
         AddSectionHeader(mainPanel, "Anthropic Settings", ref y);
 
         AddLabel(mainPanel, "API Key:", ref y);
@@ -70,24 +72,6 @@ public sealed class ConfigDialog : Form
 
         AddLabel(mainPanel, "Base URL:", ref y);
         _anthropicBaseUrlBox = CreateTextBox(mainPanel, ref y);
-
-        AddLabel(mainPanel, "Model:", ref y);
-        _anthropicModelBox = CreateTextBox(mainPanel, ref y);
-
-        AddLabel(mainPanel, "Max Tokens:", ref y);
-        _anthropicMaxTokensBox = new NumericUpDown
-        {
-            Location = new Point(Theme.GutterLarge + Theme.SpacingSmall, y),
-            Width = 180,
-            Minimum = 1024,
-            Maximum = 200000,
-            BackColor = Theme.BackgroundTertiary,
-            ForeColor = Theme.TextPrimary,
-            Font = Theme.FontRegular,
-            BorderStyle = BorderStyle.FixedSingle
-        };
-        mainPanel.Controls.Add(_anthropicMaxTokensBox);
-        y += Theme.GutterLarge * 2;
 
         Controls.Add(mainPanel);
 
@@ -213,42 +197,48 @@ public sealed class ConfigDialog : Form
     {
         var config = _configService.Config;
 
-        _providerCombo.SelectedItem = config.Provider;
+        // Set default model
+        _defaultModelCombo.Text = config.DefaultModel;
 
-        _openAiKeyBox.Text = config.OpenAi.ApiKey ?? "";
-        _openAiBaseUrlBox.Text = config.OpenAi.BaseUrl;
-        _openAiModelBox.Text = config.OpenAi.Model;
+        // Load provider settings
+        var openAiProvider = config.Providers.FirstOrDefault(p => p.Id == "openai");
+        if (openAiProvider != null)
+        {
+            _openAiKeyBox.Text = openAiProvider.ApiKey ?? "";
+            _openAiBaseUrlBox.Text = openAiProvider.BaseUrl;
+        }
 
-        _anthropicKeyBox.Text = config.Anthropic.ApiKey ?? "";
-        _anthropicBaseUrlBox.Text = config.Anthropic.BaseUrl;
-        _anthropicModelBox.Text = config.Anthropic.Model;
-        
-        // Safely set MaxTokens value within valid range
-        var maxTokens = config.Anthropic.MaxTokens;
-        if (maxTokens < _anthropicMaxTokensBox.Minimum)
-            maxTokens = (int)_anthropicMaxTokensBox.Minimum;
-        if (maxTokens > _anthropicMaxTokensBox.Maximum)
-            maxTokens = (int)_anthropicMaxTokensBox.Maximum;
-        _anthropicMaxTokensBox.Value = maxTokens;
+        var anthropicProvider = config.Providers.FirstOrDefault(p => p.Id == "anthropic");
+        if (anthropicProvider != null)
+        {
+            _anthropicKeyBox.Text = anthropicProvider.ApiKey ?? "";
+            _anthropicBaseUrlBox.Text = anthropicProvider.BaseUrl;
+        }
     }
 
     private void SaveButton_Click(object? sender, EventArgs e)
     {
         _configService.Update(config =>
         {
-            config.Provider = _providerCombo.SelectedItem?.ToString() ?? "openai";
+            config.DefaultModel = _defaultModelCombo.Text;
 
-            config.OpenAi.ApiKey = string.IsNullOrWhiteSpace(_openAiKeyBox.Text) ? null : _openAiKeyBox.Text;
-            config.OpenAi.BaseUrl = _openAiBaseUrlBox.Text;
-            config.OpenAi.Model = _openAiModelBox.Text;
+            var openAiProvider = config.Providers.FirstOrDefault(p => p.Id == "openai");
+            if (openAiProvider != null)
+            {
+                openAiProvider.ApiKey = string.IsNullOrWhiteSpace(_openAiKeyBox.Text) ? null : _openAiKeyBox.Text;
+                openAiProvider.BaseUrl = _openAiBaseUrlBox.Text;
+            }
 
-            config.Anthropic.ApiKey = string.IsNullOrWhiteSpace(_anthropicKeyBox.Text) ? null : _anthropicKeyBox.Text;
-            config.Anthropic.BaseUrl = _anthropicBaseUrlBox.Text;
-            config.Anthropic.Model = _anthropicModelBox.Text;
-            config.Anthropic.MaxTokens = (int)_anthropicMaxTokensBox.Value;
+            var anthropicProvider = config.Providers.FirstOrDefault(p => p.Id == "anthropic");
+            if (anthropicProvider != null)
+            {
+                anthropicProvider.ApiKey = string.IsNullOrWhiteSpace(_anthropicKeyBox.Text) ? null : _anthropicKeyBox.Text;
+                anthropicProvider.BaseUrl = _anthropicBaseUrlBox.Text;
+            }
         });
 
         DialogResult = DialogResult.OK;
         Close();
     }
 }
+

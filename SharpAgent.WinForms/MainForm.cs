@@ -150,7 +150,8 @@ public partial class MainForm : Form
         _headerPanel.Controls.Add(_statusLabel);
         
         // Set selected index after adding to parent to ensure proper text display
-        _providerCombo.SelectedIndex = _configService.Config.Provider.Equals("anthropic", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+        var (providerId, _) = ConfigurationService.ParseModelString(_configService.Config.DefaultModel);
+        _providerCombo.SelectedIndex = providerId.Equals("anthropic", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
         
         _headerPanel.Resize += (_, _) =>
         {
@@ -234,9 +235,13 @@ public partial class MainForm : Form
     private void ProviderCombo_SelectedIndexChanged(object? sender, EventArgs e)
     {
         var newProvider = _providerCombo.SelectedIndex == 1 ? "anthropic" : "openai";
-        if (!_configService.Config.Provider.Equals(newProvider, StringComparison.OrdinalIgnoreCase))
+        var (currentProvider, currentModel) = ConfigurationService.ParseModelString(_configService.Config.DefaultModel);
+        if (!currentProvider.Equals(newProvider, StringComparison.OrdinalIgnoreCase))
         {
-            _configService.Update(c => c.Provider = newProvider);
+            // Switch to default model for the new provider
+            var providerConfig = _configService.GetProviderConfig(newProvider);
+            var firstModel = providerConfig?.Models.FirstOrDefault()?.Id ?? currentModel;
+            _configService.Update(c => c.DefaultModel = $"{newProvider}/{firstModel}");
         }
     }
 
@@ -245,8 +250,9 @@ public partial class MainForm : Form
         using var dialog = new ConfigDialog(_configService);
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
-            _providerCombo.SelectedIndex = _configService.Config.Provider.Equals("anthropic", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
-            _chatPanel.AddSystemMessage($"Configuration updated. Using {_configService.Config.Provider} ({_configService.GetCurrentModelName()})");
+            var (providerId, _) = ConfigurationService.ParseModelString(_configService.Config.DefaultModel);
+            _providerCombo.SelectedIndex = providerId.Equals("anthropic", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            _chatPanel.AddSystemMessage($"Configuration updated. Using {_configService.GetCurrentModelName()}");
         }
     }
 
@@ -350,14 +356,15 @@ public partial class MainForm : Form
 
         if (!_configService.HasApiKey())
         {
-            _chatPanel.AddErrorMessage($"No API key configured for {_configService.Config.Provider}. Click ⚙ to add one.");
+            var (providerId, _) = ConfigurationService.ParseModelString(_configService.Config.DefaultModel);
+            _chatPanel.AddErrorMessage($"No API key configured for {providerId}. Click ⚙ to add one.");
             return;
         }
 
-        (_httpClient, var llmClient) = _configService.CreateLlmClient(_thinkingConfig);
+        (_httpClient, var llmClient) = _configService.CreateLlmClient(null, _thinkingConfig);
         
         var thinkingStatus = _thinkingConfig.Enabled ? " + Thinking" : "";
-        _statusLabel.Text = $"{_configService.Config.Provider} ({_configService.GetCurrentModelName()}){thinkingStatus}";
+        _statusLabel.Text = $"{_configService.GetCurrentModelName()}{thinkingStatus}";
 
         var tools = new ITool[] { new CalculatorTool(), new ReadFileTool(), new ListFilesTool(), new BashTool(), new GlobTool(), new GrepTool() };
         _agent = new Agent(llmClient, tools);
