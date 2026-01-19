@@ -12,15 +12,15 @@ public sealed class GrepTool : ITool
 
     public string Name => "grep";
     public string Description =>
-        "Search for exact text patterns in files using ripgrep (rg) if available, otherwise falling back to grep. " +
-        "Supports regex by default, case-insensitive search, and file filtering.";
+        "Search for text patterns in files using ripgrep (rg) if available, otherwise falling back to grep. " +
+        "The 'pattern' parameter is REQUIRED. Supports regex by default, case-insensitive search, and file filtering.";
 
     public object ParametersSchema => new
     {
         type = "object",
         properties = new
         {
-            pattern = new { type = "string", description = "The pattern to search for" },
+            pattern = new { type = "string", description = "The pattern to search for (REQUIRED)" },
             path = new { type = "string", description = "The directory or file to search in (default: \".\")" },
             isRegex = new { type = "boolean", description = "Whether to treat the pattern as a regular expression (default: true)" },
             caseInsensitive = new { type = "boolean", description = "Whether to perform a case-insensitive search (default: false)" },
@@ -36,7 +36,7 @@ public sealed class GrepTool : ITool
             var (pattern, path, isRegex, caseInsensitive, include) = ParseInput(input);
 
             if (string.IsNullOrWhiteSpace(pattern))
-                return "Error: pattern is required";
+                return "Error: 'pattern' parameter is required. Please provide a search pattern as a string (e.g., {\"pattern\": \"searchTerm\", \"path\": \".\"})";
 
             var (exe, args) = PrepareCommand(pattern, path, isRegex, caseInsensitive, include);
 
