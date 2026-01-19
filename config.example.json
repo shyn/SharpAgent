@@ -1,14 +1,101 @@
 {
-  "provider": "openai",
-  "openAi": {
-    "apiKey": null,
-    "baseUrl": "https://api.openai.com/v1/",
-    "model": "gpt-4o-mini"
-  },
-  "anthropic": {
-    "apiKey": null,
-    "baseUrl": "https://api.anthropic.com/v1/",
-    "model": "claude-sonnet-4-20250514",
-    "maxTokens": 8192
-  }
+  "defaultModel": "antigravity/gemini-3-flash",
+  "providers": [
+    {
+      "id": "antigravity",
+      "apiKey": null,
+      "baseUrl": "http://localhost:8045/",
+      "models": [
+        {
+          "id": "gemini-3-flash",
+          "apiFormats": [
+            "Anthropic"
+          ],
+          "contextWindow": 128000,
+          "maxOutputTokens": 16384,
+          "capabilities": {
+            "toolCall": true,
+            "image": true,
+            "thinking": false,
+            "temperature": true,
+            "reasoningEffort": false
+          }
+        },
+        {
+          "id": "gpt-4o",
+          "apiFormats": [
+            "OpenAI"
+          ],
+          "contextWindow": 128000,
+          "maxOutputTokens": 16384,
+          "capabilities": {
+            "toolCall": true,
+            "image": true,
+            "thinking": false,
+            "temperature": true,
+            "reasoningEffort": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "openai",
+      "apiKey": null,
+      "baseUrl": "https://api.openai.com/v1/",
+      "models": [
+        {
+          "id": "gpt-4o-mini",
+          "apiFormats": [
+            "OpenAI"
+          ],
+          "contextWindow": 128000,
+          "maxOutputTokens": 16384,
+          "capabilities": {
+            "toolCall": true,
+            "image": true,
+            "thinking": false,
+            "temperature": true,
+            "reasoningEffort": false
+          }
+        },
+        {
+          "id": "gpt-4o",
+          "apiFormats": [
+            "OpenAI"
+          ],
+          "contextWindow": 128000,
+          "maxOutputTokens": 16384,
+          "capabilities": {
+            "toolCall": true,
+            "image": true,
+            "thinking": false,
+            "temperature": true,
+            "reasoningEffort": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "anthropic",
+      "apiKey": null,
+      "baseUrl": "https://api.anthropic.com/v1/",
+      "models": [
+        {
+          "id": "claude-sonnet-4-20250514",
+          "apiFormats": [
+            "Anthropic"
+          ],
+          "contextWindow": 200000,
+          "maxOutputTokens": 8192,
+          "capabilities": {
+            "toolCall": true,
+            "image": true,
+            "thinking": true,
+            "temperature": true,
+            "reasoningEffort": false
+          }
+        }
+      ]
+    }
+  ]
 }
