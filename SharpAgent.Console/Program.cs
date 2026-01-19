@@ -1,9 +1,12 @@
 using Microsoft.Extensions.Logging;
+using SharpAgent.Console;
 using SharpAgent.Core;
 using SharpAgent.Core.Configuration;
 using SharpAgent.Core.Streaming;
 using SharpAgent.Core.Tools;
+using Spectre.Console;
 
+// Initialize configuration
 var configService = new ConfigurationService();
 configService.Load();
 
@@ -12,19 +15,15 @@ var logLevel = Environment.GetEnvironmentVariable("LOG_LEVEL") ?? "Information";
 using var loggerFactory = LoggerFactory.Create(builder =>
 {
     builder
-        .SetMinimumLevel(Enum.Parse<LogLevel>(logLevel, ignoreCase: true))
-        .AddSimpleConsole(options =>
-        {
-            options.SingleLine = true;
-            options.TimestampFormat = "HH:mm:ss ";
-        });
+        .SetMinimumLevel(Enum.Parse<LogLevel>(logLevel, ignoreCase: true));
 });
 
 if (!configService.HasApiKey())
 {
-    Console.WriteLine($"No API key configured for {configService.Config.Provider}.");
-    Console.WriteLine("Set via environment variables (OPENAI_API_KEY or ANTHROPIC_API_KEY)");
-    Console.WriteLine($"Or edit config file: {configService.ConfigPath}");
+    var (providerId, _) = ConfigurationService.ParseModelString(configService.Config.DefaultModel);
+    AnsiConsole.MarkupLine($"[red]No API key configured for {providerId.EscapeMarkup()}.[/]");
+    AnsiConsole.MarkupLine("Set via environment variables (OPENAI_API_KEY or ANTHROPIC_API_KEY)");
+    AnsiConsole.MarkupLine($"Or edit config file: [cyan]{configService.ConfigPath.EscapeMarkup()}[/]") ;
     return;
 }
 
@@ -34,64 +33,157 @@ var tools = new ITool[] { new CalculatorTool(), new ReadFileTool(), new ListFile
 var agentLogger = loggerFactory.CreateLogger<Agent>();
 var agent = new Agent(llmClient, tools, logger: agentLogger);
 
-Console.WriteLine("SharpAgent - Type 'exit' to quit");
-Console.WriteLine($"Provider: {configService.Config.Provider} | Model: {configService.GetCurrentModelName()} | Log level: {logLevel}");
-Console.WriteLine($"Config: {configService.ConfigPath}");
-Console.WriteLine();
+// Display welcome banner
+AnsiConsole.Write(new Rule("[bold purple]SharpAgent[/]")
+{
+    Style = Style.Parse("purple bold")
+});
+AnsiConsole.WriteLine();
 
+var grid = new Grid();
+grid.AddColumn();
+grid.AddColumn();
+grid.AddRow(
+    $"[bold]Model:[/] [cyan]{configService.GetCurrentModelName().EscapeMarkup()}[/]",
+    $"[bold]Log:[/] [cyan]{logLevel.EscapeMarkup()}[/]"
+);
+grid.AddRow(
+    $"[bold]Config:[/] [cyan]{configService.ConfigPath.EscapeMarkup()}[/]",
+    ""
+);
+AnsiConsole.Write(grid);
+AnsiConsole.WriteLine();
+AnsiConsole.MarkupLine("[dim]Type 'exit' to quit[/]");
+AnsiConsole.WriteLine();
+
+// Initialize history prompt
+var historyPrompt = new HistoryTextPrompt(AnsiConsole.Console, "You: ");
+
+// Main interaction loop
 while (true)
 {
-    Console.Write("You: ");
-    var input = Console.ReadLine();
+    var input = historyPrompt.Prompt();
 
     if (string.IsNullOrWhiteSpace(input) || input.Equals("exit", StringComparison.OrdinalIgnoreCase))
+    {
+        AnsiConsole.MarkupLine("[dim]Goodbye![/]");
         break;
+    }
+
+    // Add input to history for arrow key navigation
+    historyPrompt.AddToHistory(input);
 
     try
     {
-        Console.Write("Agent: ");
+        AnsiConsole.Write(new Rule("[bold yellow]Agent[/]"));
+
         await foreach (var evt in agent.RunStreamingAsync(input))
         {
             switch (evt)
             {
-                case AgentTextDeltaEvent delta:
-                    Console.Write(delta.Text);
+                case AgentStartedEvent started:
+                    AnsiConsole.MarkupLine($"\n[bold yellow]Goal:[/] {started.Goal.EscapeMarkup()}");
                     break;
 
-                case AgentToolCallStartedEvent toolStart:
-                    Console.WriteLine();
-                    Console.ForegroundColor = ConsoleColor.Cyan;
-                    Console.WriteLine($"  → Calling tool: {toolStart.ToolName}");
-                    Console.ForegroundColor = ConsoleColor.DarkGray;
-                    Console.WriteLine($"    Args: {toolStart.Arguments}");
-                    Console.ResetColor();
+                case AgentTextDeltaEvent delta:
+                    AnsiConsole.MarkupInterpolated($"[white]{delta.Text.EscapeMarkup()}[/]");
+                    break;
+
+                case AgentThinkingDeltaEvent thinking:
+                    AnsiConsole.MarkupInterpolated($"[dim violet]{thinking.Thinking.EscapeMarkup()}[/]");
+                    break;
+
+                case AgentThinkingCompletedEvent thinkingCompleted:
+                    AnsiConsole.WriteLine();
+                    break;
+
+                case AgentToolUseStartedEvent toolStart:
+                    AnsiConsole.WriteLine();
+                    AnsiConsole.MarkupLine($"[bold cyan]→ LLM requesting:[/] [cyan]{toolStart.ToolName.EscapeMarkup()}[/]");
+                    break;
+
+                case AgentToolUseArgumentsDeltaEvent argsDelta:
+                    var partialArgs = argsDelta.PartialJson.Length > 100
+                        ? argsDelta.PartialJson[..100] + "..."
+                        : argsDelta.PartialJson;
+                    AnsiConsole.MarkupLine($"  [dim]Args: {partialArgs.EscapeMarkup()}[/]");
+                    break;
+
+                case AgentToolUseCompletedEvent toolComplete:
+                    AnsiConsole.WriteLine();
+                    break;
+
+                case AgentToolCallStartedEvent toolCall:
+                    AnsiConsole.WriteLine();
+                    var toolPanel = new Panel(
+                        new Markup($"[cyan]{toolCall.Arguments.EscapeMarkup()}[/]")
+                    )
+                    {
+                        Header = new PanelHeader($"[bold]Executing: {toolCall.ToolName.EscapeMarkup()}[/]") ,
+                        Border = BoxBorder.Rounded,
+                        BorderStyle = new Style(foreground: Color.Cyan),
+                        Padding = new Padding(1)
+                    };
+                    AnsiConsole.Write(toolPanel);
                     break;
 
                 case AgentToolCallCompletedEvent toolComplete:
-                    Console.ForegroundColor = ConsoleColor.Green;
-                    var displayResult = toolComplete.Result.Length > 200
-                        ? toolComplete.Result[..200] + "..."
+                    var displayResult = toolComplete.Result.Length > 300
+                        ? toolComplete.Result[..300] + "\n[dim]...[/]"
                         : toolComplete.Result;
-                    Console.WriteLine($"  ✓ Result: {displayResult}");
-                    Console.ResetColor();
+
+                    if (toolComplete.IsError)
+                    {
+                        AnsiConsole.MarkupLine($"[bold red]✗ {toolComplete.ToolCallId.EscapeMarkup()}[/]: [red]{displayResult.EscapeMarkup()}[/]");
+                    }
+                    else
+                    {
+                        AnsiConsole.MarkupLine($"[bold green]✓ {toolComplete.ToolCallId.EscapeMarkup()}[/]: [white]{displayResult.EscapeMarkup()}[/]");
+                    }
                     break;
 
-                case AgentCompletedEvent:
-                    Console.WriteLine();
+                case AgentCompletedEvent completed:
+                    AnsiConsole.WriteLine();
+                    var answerPanel = new Panel(
+                        new Markup($"[bold white]{completed.FinalAnswer.EscapeMarkup()}[/]")
+                    )
+                    {
+                        Header = new PanelHeader("[bold]Final Answer[/]"),
+                        Border = BoxBorder.Rounded,
+                        BorderStyle = new Style(foreground: Color.Green),
+                        Padding = new Padding(1)
+                    };
+                    AnsiConsole.Write(answerPanel);
                     break;
 
                 case AgentErrorEvent error:
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine($"\nError: {error.Message}");
-                    Console.ResetColor();
+                    var errorPanel = new Panel(
+                        new Markup($"[red]{error.Message.EscapeMarkup()}[/]")
+                    )
+                    {
+                        Header = new PanelHeader("[bold]Error[/]"),
+                        Border = BoxBorder.Rounded,
+                        BorderStyle = new Style(foreground: Color.Red),
+                        Padding = new Padding(1)
+                    };
+                    AnsiConsole.Write(errorPanel);
                     break;
             }
         }
-        Console.WriteLine();
+        AnsiConsole.WriteLine();
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"Error: {ex.Message}");
+        var errorPanel = new Panel(
+            new Markup($"[red]{ex.Message.EscapeMarkup()}[/]")
+        )
+        {
+            Header = new PanelHeader("[bold]Error[/]"),
+            Border = BoxBorder.Rounded,
+            BorderStyle = new Style(foreground: Color.Red),
+            Padding = new Padding(1)
+        };
+        AnsiConsole.Write(errorPanel);
     }
 }
 
