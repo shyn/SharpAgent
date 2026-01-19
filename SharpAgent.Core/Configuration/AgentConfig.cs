@@ -2,26 +2,110 @@ using System.Text.Json.Serialization;
 
 namespace SharpAgent.Core.Configuration;
 
+/// <summary>
+/// Supported API formats for LLM providers.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ApiFormat
+{
+    OpenAI,
+    Anthropic,
+    ResponseApi  // Future: OpenAI Response API
+}
+
+/// <summary>
+/// Model capabilities configuration.
+/// </summary>
+public sealed class LlmCapabilities
+{
+    public bool ToolCall { get; set; } = true;
+    public bool Image { get; set; } = false;
+    public bool Thinking { get; set; } = false;
+    public bool Temperature { get; set; } = true;
+    public bool ReasoningEffort { get; set; } = false;
+}
+
+/// <summary>
+/// Configuration for a specific LLM model.
+/// </summary>
+public sealed class LlmModelConfig
+{
+    public string Id { get; set; } = string.Empty;
+    public List<ApiFormat> ApiFormats { get; set; } = [ApiFormat.OpenAI];
+    public int? ContextWindow { get; set; }
+    public int? MaxOutputTokens { get; set; }
+    public LlmCapabilities Capabilities { get; set; } = new();
+}
+
+/// <summary>
+/// Configuration for an LLM provider containing multiple models.
+/// </summary>
+public sealed class LlmProviderConfig
+{
+    public string Id { get; set; } = string.Empty;
+    public string? ApiKey { get; set; }
+    public string BaseUrl { get; set; } = string.Empty;
+    public List<LlmModelConfig> Models { get; set; } = [];
+}
+
+/// <summary>
+/// Main agent configuration with providers and models.
+/// </summary>
 public sealed class AgentConfig
 {
-    public string Provider { get; set; } = "openai";
-    public OpenAiConfig OpenAi { get; set; } = new();
-    public AnthropicConfig Anthropic { get; set; } = new();
-}
+    /// <summary>
+    /// Default model in "provider/model" format (e.g., "openai/gpt-4o-mini").
+    /// </summary>
+    public string DefaultModel { get; set; } = "openai/gpt-4o-mini";
 
-public sealed class OpenAiConfig
-{
-    public string? ApiKey { get; set; }
-    public string BaseUrl { get; set; } = "https://api.openai.com/v1/";
-    public string Model { get; set; } = "gpt-4o-mini";
-}
+    /// <summary>
+    /// List of configured LLM providers.
+    /// </summary>
+    public List<LlmProviderConfig> Providers { get; set; } = GetDefaultProviders();
 
-public sealed class AnthropicConfig
-{
-    public string? ApiKey { get; set; }
-    public string BaseUrl { get; set; } = "https://api.anthropic.com/v1/";
-    public string Model { get; set; } = "claude-sonnet-4-20250514";
-    public int MaxTokens { get; set; } = 8192;
+    private static List<LlmProviderConfig> GetDefaultProviders() =>
+    [
+        new LlmProviderConfig
+        {
+            Id = "openai",
+            BaseUrl = "https://api.openai.com/v1/",
+            Models =
+            [
+                new LlmModelConfig
+                {
+                    Id = "gpt-4o-mini",
+                    ApiFormats = [ApiFormat.OpenAI],
+                    ContextWindow = 128000,
+                    MaxOutputTokens = 16384,
+                    Capabilities = new LlmCapabilities { ToolCall = true, Image = true }
+                },
+                new LlmModelConfig
+                {
+                    Id = "gpt-4o",
+                    ApiFormats = [ApiFormat.OpenAI],
+                    ContextWindow = 128000,
+                    MaxOutputTokens = 16384,
+                    Capabilities = new LlmCapabilities { ToolCall = true, Image = true }
+                }
+            ]
+        },
+        new LlmProviderConfig
+        {
+            Id = "anthropic",
+            BaseUrl = "https://api.anthropic.com/v1/",
+            Models =
+            [
+                new LlmModelConfig
+                {
+                    Id = "claude-sonnet-4-20250514",
+                    ApiFormats = [ApiFormat.Anthropic],
+                    ContextWindow = 200000,
+                    MaxOutputTokens = 8192,
+                    Capabilities = new LlmCapabilities { ToolCall = true, Image = true, Thinking = true }
+                }
+            ]
+        }
+    ];
 }
 
 public enum ThinkingLevel { Off, Low, Middle, High }

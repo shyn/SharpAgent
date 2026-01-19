@@ -92,105 +92,176 @@ public sealed class ConfigurationService
         ConfigChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// Parses a model string in "provider/model" format.
+    /// </summary>
+    public static (string ProviderId, string ModelId) ParseModelString(string modelString)
+    {
+        var parts = modelString.Split('/', 2);
+        if (parts.Length != 2)
+            throw new ArgumentException($"Invalid model format: '{modelString}'. Expected 'provider/model'.");
+        return (parts[0], parts[1]);
+    }
+
+    /// <summary>
+    /// Gets the provider configuration by ID.
+    /// </summary>
+    public LlmProviderConfig? GetProviderConfig(string providerId)
+    {
+        return _effectiveConfig.Providers.FirstOrDefault(p =>
+            p.Id.Equals(providerId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Gets the model configuration from a "provider/model" string.
+    /// </summary>
+    public (LlmProviderConfig Provider, LlmModelConfig Model)? GetModelConfig(string modelString)
+    {
+        var (providerId, modelId) = ParseModelString(modelString);
+        var provider = GetProviderConfig(providerId);
+        if (provider == null) return null;
+
+        var model = provider.Models.FirstOrDefault(m =>
+            m.Id.Equals(modelId, StringComparison.OrdinalIgnoreCase));
+        if (model == null) return null;
+
+        return (provider, model);
+    }
+
+    /// <summary>
+    /// Creates an LLM client for the specified model string.
+    /// </summary>
+    public (HttpClient HttpClient, ILlmClient LlmClient) CreateLlmClient(
+        string? modelString = null,
+        ThinkingConfig? thinkingConfig = null)
+    {
+        modelString ??= _effectiveConfig.DefaultModel;
+        var config = GetModelConfig(modelString);
+
+        if (config == null)
+            throw new InvalidOperationException($"Model not found: {modelString}");
+
+        var (provider, model) = config.Value;
+
+        if (string.IsNullOrEmpty(provider.ApiKey))
+            throw new InvalidOperationException($"No API key configured for provider: {provider.Id}");
+
+        var baseUrl = provider.BaseUrl;
+        if (!baseUrl.EndsWith('/')) baseUrl += "/";
+
+        // Use the first supported API format
+        var apiFormat = model.ApiFormats.FirstOrDefault();
+        var maxTokens = model.MaxOutputTokens ?? 8192;
+
+        return apiFormat switch
+        {
+            ApiFormat.Anthropic => CreateAnthropicClient(baseUrl, provider.ApiKey, model.Id, maxTokens, thinkingConfig),
+            ApiFormat.OpenAI => CreateOpenAiClient(baseUrl, provider.ApiKey, model.Id),
+            _ => CreateOpenAiClient(baseUrl, provider.ApiKey, model.Id)  // Default to OpenAI format
+        };
+    }
+
+    private static (HttpClient, ILlmClient) CreateAnthropicClient(
+        string baseUrl, string apiKey, string model, int maxTokens, ThinkingConfig? thinkingConfig)
+    {
+        var httpClient = new HttpClient
+        {
+            BaseAddress = new Uri(baseUrl),
+            DefaultRequestHeaders =
+            {
+                { "x-api-key", apiKey },
+                { "anthropic-version", "2023-06-01" }
+            }
+        };
+        return (httpClient, new AnthropicClient(httpClient, model, maxTokens, thinkingConfig));
+    }
+
+    private static (HttpClient, ILlmClient) CreateOpenAiClient(string baseUrl, string apiKey, string model)
+    {
+        var httpClient = new HttpClient
+        {
+            BaseAddress = new Uri(baseUrl),
+            DefaultRequestHeaders = { { "Authorization", $"Bearer {apiKey}" } }
+        };
+        return (httpClient, new OpenAiClient(httpClient, model));
+    }
+
+    public string GetCurrentModelName()
+    {
+        return _effectiveConfig.DefaultModel;
+    }
+
+    public bool HasApiKey()
+    {
+        var config = GetModelConfig(_effectiveConfig.DefaultModel);
+        return config != null && !string.IsNullOrEmpty(config.Value.Provider.ApiKey);
+    }
+
+    public bool HasApiKey(string modelString)
+    {
+        var config = GetModelConfig(modelString);
+        return config != null && !string.IsNullOrEmpty(config.Value.Provider.ApiKey);
+    }
+
     private static AgentConfig CloneConfig(AgentConfig source)
     {
         return new AgentConfig
         {
-            Provider = source.Provider,
-            OpenAi = new OpenAiConfig
+            DefaultModel = source.DefaultModel,
+            Providers = source.Providers.Select(p => new LlmProviderConfig
             {
-                ApiKey = source.OpenAi.ApiKey,
-                BaseUrl = source.OpenAi.BaseUrl,
-                Model = source.OpenAi.Model
-            },
-            Anthropic = new AnthropicConfig
-            {
-                ApiKey = source.Anthropic.ApiKey,
-                BaseUrl = source.Anthropic.BaseUrl,
-                Model = source.Anthropic.Model,
-                MaxTokens = source.Anthropic.MaxTokens
-            }
+                Id = p.Id,
+                ApiKey = p.ApiKey,
+                BaseUrl = p.BaseUrl,
+                Models = p.Models.Select(m => new LlmModelConfig
+                {
+                    Id = m.Id,
+                    ApiFormats = [.. m.ApiFormats],
+                    ContextWindow = m.ContextWindow,
+                    MaxOutputTokens = m.MaxOutputTokens,
+                    Capabilities = new LlmCapabilities
+                    {
+                        ToolCall = m.Capabilities.ToolCall,
+                        Image = m.Capabilities.Image,
+                        Thinking = m.Capabilities.Thinking,
+                        Temperature = m.Capabilities.Temperature,
+                        ReasoningEffort = m.Capabilities.ReasoningEffort
+                    }
+                }).ToList()
+            }).ToList()
         };
     }
 
     private static void ApplyEnvironmentOverrides(AgentConfig config)
     {
-        var provider = Environment.GetEnvironmentVariable("LLM_PROVIDER");
-        if (!string.IsNullOrEmpty(provider))
-            config.Provider = provider.ToLowerInvariant();
+        // Override default model
+        var defaultModel = Environment.GetEnvironmentVariable("LLM_DEFAULT_MODEL");
+        if (!string.IsNullOrEmpty(defaultModel))
+            config.DefaultModel = defaultModel;
 
+        // Override OpenAI API key and base URL
         var openAiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-        if (!string.IsNullOrEmpty(openAiKey))
-            config.OpenAi.ApiKey = openAiKey;
-
         var openAiBaseUrl = Environment.GetEnvironmentVariable("OPENAI_BASE_URL");
-        if (!string.IsNullOrEmpty(openAiBaseUrl))
-            config.OpenAi.BaseUrl = openAiBaseUrl;
+        var openAiProvider = config.Providers.FirstOrDefault(p => p.Id == "openai");
+        if (openAiProvider != null)
+        {
+            if (!string.IsNullOrEmpty(openAiKey))
+                openAiProvider.ApiKey = openAiKey;
+            if (!string.IsNullOrEmpty(openAiBaseUrl))
+                openAiProvider.BaseUrl = openAiBaseUrl;
+        }
 
-        var openAiModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
-        if (!string.IsNullOrEmpty(openAiModel))
-            config.OpenAi.Model = openAiModel;
-
+        // Override Anthropic API key and base URL
         var anthropicKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
-        if (!string.IsNullOrEmpty(anthropicKey))
-            config.Anthropic.ApiKey = anthropicKey;
-
         var anthropicBaseUrl = Environment.GetEnvironmentVariable("ANTHROPIC_BASE_URL");
-        if (!string.IsNullOrEmpty(anthropicBaseUrl))
-            config.Anthropic.BaseUrl = anthropicBaseUrl;
-
-        var anthropicModel = Environment.GetEnvironmentVariable("ANTHROPIC_MODEL");
-        if (!string.IsNullOrEmpty(anthropicModel))
-            config.Anthropic.Model = anthropicModel;
-    }
-
-    public (HttpClient HttpClient, ILlmClient LlmClient) CreateLlmClient(ThinkingConfig? thinkingConfig = null)
-    {
-        var isAnthropic = _effectiveConfig.Provider.Equals("anthropic", StringComparison.OrdinalIgnoreCase);
-
-        if (isAnthropic)
+        var anthropicProvider = config.Providers.FirstOrDefault(p => p.Id == "anthropic");
+        if (anthropicProvider != null)
         {
-            var baseUrl = _effectiveConfig.Anthropic.BaseUrl;
-            if (!baseUrl.EndsWith('/')) baseUrl += "/";
-
-            var httpClient = new HttpClient
-            {
-                BaseAddress = new Uri(baseUrl),
-                DefaultRequestHeaders =
-                {
-                    { "x-api-key", _effectiveConfig.Anthropic.ApiKey ?? "" },
-                    { "anthropic-version", "2023-06-01" }
-                }
-            };
-
-            return (httpClient, new AnthropicClient(httpClient, _effectiveConfig.Anthropic.Model, _effectiveConfig.Anthropic.MaxTokens, thinkingConfig));
+            if (!string.IsNullOrEmpty(anthropicKey))
+                anthropicProvider.ApiKey = anthropicKey;
+            if (!string.IsNullOrEmpty(anthropicBaseUrl))
+                anthropicProvider.BaseUrl = anthropicBaseUrl;
         }
-        else
-        {
-            var baseUrl = _effectiveConfig.OpenAi.BaseUrl;
-            if (!baseUrl.EndsWith('/')) baseUrl += "/";
-
-            var httpClient = new HttpClient
-            {
-                BaseAddress = new Uri(baseUrl),
-                DefaultRequestHeaders = { { "Authorization", $"Bearer {_effectiveConfig.OpenAi.ApiKey ?? ""}" } }
-            };
-
-            return (httpClient, new OpenAiClient(httpClient, _effectiveConfig.OpenAi.Model));
-        }
-    }
-
-    public string GetCurrentModelName()
-    {
-        return _effectiveConfig.Provider.Equals("anthropic", StringComparison.OrdinalIgnoreCase)
-            ? _effectiveConfig.Anthropic.Model
-            : _effectiveConfig.OpenAi.Model;
-    }
-
-    public bool HasApiKey()
-    {
-        return _effectiveConfig.Provider.Equals("anthropic", StringComparison.OrdinalIgnoreCase)
-            ? !string.IsNullOrEmpty(_effectiveConfig.Anthropic.ApiKey)
-            : !string.IsNullOrEmpty(_effectiveConfig.OpenAi.ApiKey);
     }
 }
+
