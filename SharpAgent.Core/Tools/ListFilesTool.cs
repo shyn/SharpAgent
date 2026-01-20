@@ -5,7 +5,7 @@ namespace SharpAgent.Core.Tools;
 public sealed class ListFilesTool : ITool
 {
     public string Name => "list_files";
-    public string Description => "List files and directories at a given path. If no path is provided, lists files in the current directory.";
+    public string Description => "List files and directories at a given path (non-recursive). Returns name and type (extension or 'directory') for each entry. Directories have a trailing '/'. If no path is provided, lists files in the current directory.";
 
     public object ParametersSchema => new
     {
@@ -23,18 +23,24 @@ public sealed class ListFilesTool : ITool
             if (!Directory.Exists(dir))
                 return Task.FromResult($"Error: Directory not found: {dir}");
 
-            var files = new List<string>();
-
-            foreach (var entry in Directory.EnumerateFileSystemEntries(dir, "*", SearchOption.AllDirectories))
+            var entries = Directory.GetFileSystemEntries(dir);
+            var fileInfo = entries.Select(entry =>
             {
-                var relPath = Path.GetRelativePath(dir, entry);
-                if (Directory.Exists(entry))
-                    files.Add(relPath.Replace('\\', '/') + "/");
-                else
-                    files.Add(relPath.Replace('\\', '/'));
-            }
+                var name = Path.GetFileName(entry);
+                var isDirectory = Directory.Exists(entry);
+                var fileType = isDirectory ? "directory" : Path.GetExtension(entry).TrimStart('.').ToLowerInvariant();
 
-            return Task.FromResult(JsonSerializer.Serialize(files));
+                if (string.IsNullOrEmpty(fileType) && !isDirectory)
+                    fileType = "file";
+
+                return new
+                {
+                    name = isDirectory ? $"{name}/" : name,
+                    type = fileType
+                };
+            }).OrderBy(x => x.type == "directory" ? 0 : 1).ThenBy(x => x.name.TrimEnd('/'));
+
+            return Task.FromResult(JsonSerializer.Serialize(fileInfo));
         }
         catch (Exception ex)
         {
