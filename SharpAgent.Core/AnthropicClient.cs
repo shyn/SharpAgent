@@ -200,6 +200,7 @@ public sealed class AnthropicClient : ILlmClient
                 else if (blockStart?.ContentBlock?.Type == "thinking")
                 {
                     state.IsInThinkingBlock = true;
+                    yield return new LlmThinkingStartedEvent();
                 }
                 else if (blockStart?.ContentBlock?.Type == "text")
                 {

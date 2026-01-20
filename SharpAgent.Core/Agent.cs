@@ -69,6 +69,9 @@ public sealed class Agent : IAgent
             {
                 switch (llmEvent)
                 {
+                    case LlmThinkingStartedEvent:
+                        yield return new AgentThinkingStartedEvent();
+                        break;
                     case LlmThinkingDeltaEvent thinkingDelta:
                         thinkingBuilder.Append(thinkingDelta.Thinking);
                         yield return new AgentThinkingDeltaEvent(thinkingDelta.Thinking);

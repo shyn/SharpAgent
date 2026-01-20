@@ -18,6 +18,7 @@ public interface ILlmClient
 public abstract record LlmStreamEvent;
 
 public sealed record LlmTextDeltaEvent(string Text) : LlmStreamEvent;
+public sealed record LlmThinkingStartedEvent() : LlmStreamEvent;
 public sealed record LlmThinkingDeltaEvent(string Thinking) : LlmStreamEvent;
 public sealed record LlmThinkingCompletedEvent(string FullThinking) : LlmStreamEvent;
 public sealed record LlmToolUseStartedEvent(string Id, string Name) : LlmStreamEvent;
