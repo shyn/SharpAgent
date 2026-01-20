@@ -191,6 +191,29 @@ public sealed class ConfigurationService
         return _effectiveConfig.DefaultModel;
     }
 
+    /// <summary>
+    /// Gets all available model strings in "provider/model" format.
+    /// </summary>
+    public IReadOnlyList<string> GetAvailableModels()
+    {
+        return _effectiveConfig.Providers
+            .SelectMany(p => p.Models.Select(m => $"{p.Id}/{m.Id}"))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Sets the current model without persisting to config file.
+    /// </summary>
+    public void SetCurrentModel(string modelString)
+    {
+        var config = GetModelConfig(modelString);
+        if (config == null)
+            throw new InvalidOperationException($"Model not found: {modelString}");
+
+        _effectiveConfig.DefaultModel = modelString;
+        ConfigChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     public bool HasApiKey()
     {
         var config = GetModelConfig(_effectiveConfig.DefaultModel);
