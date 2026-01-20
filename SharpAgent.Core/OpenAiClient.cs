@@ -70,24 +70,114 @@ public sealed class OpenAiClient : ILlmClient
         IReadOnlyList<ITool> tools,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var response = await GetCompletionAsync(messages, tools, ct);
-        
-        if (!string.IsNullOrEmpty(response.Content))
+        var request = new OpenAiRequest
         {
-            yield return new LlmTextDeltaEvent(response.Content);
+            Model = _model,
+            Messages = messages.Select(ToOpenAiMessage).ToList(),
+            Tools = tools.Count > 0 ? tools.Select(ToOpenAiTool).ToList() : null,
+            Stream = true
+        };
+
+        var requestJson = JsonSerializer.Serialize(request, JsonOptions);
+        _logger.LogDebug("HTTP Request Body:\n{RequestBody}", requestJson);
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
+        {
+            Content = new StringContent(requestJson, System.Text.Encoding.UTF8, "application/json")
+        };
+
+        using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            _logger.LogError("HTTP {StatusCode}: {Body}", (int)response.StatusCode, errorBody);
+            response.EnsureSuccessStatusCode();
         }
-        
-        if (response.ToolCalls is { Count: > 0 })
+
+        await using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var reader = new System.IO.StreamReader(stream);
+
+        var state = new StreamingState();
+
+        string? line;
+        while ((line = await reader.ReadLineAsync(ct)) != null)
         {
-            foreach (var tc in response.ToolCalls)
+            if (string.IsNullOrEmpty(line)) continue;
+            if (!line.StartsWith("data: ")) continue;
+
+            var data = line[6..];
+            if (data == "[DONE]") break;
+
+            await foreach (var evt in ProcessStreamChunkAsync(data, state))
             {
-                yield return new LlmToolUseStartedEvent(tc.Id, tc.Name);
-                yield return new LlmToolUseArgumentsDeltaEvent(tc.Id, tc.Arguments);
+                yield return evt;
+            }
+        }
+
+        yield return new LlmMessageCompletedEvent(
+            state.TextBuilder.Length > 0 ? state.TextBuilder.ToString() : null,
+            null,
+            state.ToolCalls.Count > 0 ? state.ToolCalls : null);
+    }
+
+    private async IAsyncEnumerable<LlmStreamEvent> ProcessStreamChunkAsync(string data, StreamingState state)
+    {
+        OpenAiStreamChunk? chunk;
+        try
+        {
+            chunk = JsonSerializer.Deserialize<OpenAiStreamChunk>(data, JsonOptions);
+        }
+        catch
+        {
+            yield break;
+        }
+
+        var delta = chunk?.Choices?.FirstOrDefault()?.Delta;
+        if (delta == null) yield break;
+
+        if (!string.IsNullOrEmpty(delta.Content))
+        {
+            state.TextBuilder.Append(delta.Content);
+            yield return new LlmTextDeltaEvent(delta.Content);
+        }
+
+        if (delta.ToolCalls != null)
+        {
+            foreach (var tc in delta.ToolCalls)
+            {
+                if (tc.Index >= state.ToolCalls.Count)
+                {
+                    var newTool = new ToolCall(tc.Id ?? $"call_{state.ToolCalls.Count}", tc.Function?.Name ?? "", "");
+                    state.ToolCalls.Add(newTool);
+                    yield return new LlmToolUseStartedEvent(newTool.Id, newTool.Name);
+                }
+
+                if (!string.IsNullOrEmpty(tc.Function?.Arguments))
+                {
+                    var current = state.ToolCalls[tc.Index];
+                    state.ToolCalls[tc.Index] = current with { Arguments = current.Arguments + tc.Function.Arguments };
+                    yield return new LlmToolUseArgumentsDeltaEvent(current.Id, tc.Function.Arguments);
+                }
+            }
+        }
+
+        var finishReason = chunk?.Choices?.FirstOrDefault()?.FinishReason;
+        if (finishReason == "tool_calls")
+        {
+            foreach (var tc in state.ToolCalls)
+            {
                 yield return new LlmToolUseCompletedEvent(tc.Id);
             }
         }
-        
-        yield return new LlmMessageCompletedEvent(response.Content, null, response.ToolCalls);
+
+        await Task.CompletedTask;
+    }
+
+    private sealed class StreamingState
+    {
+        public System.Text.StringBuilder TextBuilder { get; } = new();
+        public List<ToolCall> ToolCalls { get; } = [];
     }
 
     private static OpenAiMessage ToOpenAiMessage(Message m) => m.Role switch
@@ -123,6 +213,7 @@ public sealed class OpenAiClient : ILlmClient
         public required string Model { get; init; }
         public required List<OpenAiMessage> Messages { get; init; }
         public List<OpenAiTool>? Tools { get; init; }
+        public bool? Stream { get; init; }
     }
 
     private sealed class OpenAiMessage
@@ -167,5 +258,35 @@ public sealed class OpenAiClient : ILlmClient
     private sealed class OpenAiChoice
     {
         public OpenAiMessage? Message { get; init; }
+    }
+
+    private sealed class OpenAiStreamChunk
+    {
+        public List<OpenAiStreamChoice>? Choices { get; init; }
+    }
+
+    private sealed class OpenAiStreamChoice
+    {
+        public OpenAiStreamDelta? Delta { get; init; }
+        public string? FinishReason { get; init; }
+    }
+
+    private sealed class OpenAiStreamDelta
+    {
+        public string? Content { get; init; }
+        public List<OpenAiStreamToolCall>? ToolCalls { get; init; }
+    }
+
+    private sealed class OpenAiStreamToolCall
+    {
+        public int Index { get; init; }
+        public string? Id { get; init; }
+        public OpenAiStreamFunction? Function { get; init; }
+    }
+
+    private sealed class OpenAiStreamFunction
+    {
+        public string? Name { get; init; }
+        public string? Arguments { get; init; }
     }
 }
