@@ -131,7 +131,7 @@ public sealed class ConfigurationService
     /// <summary>
     /// Creates an LLM client for the specified model string.
     /// </summary>
-    public (HttpClient HttpClient, ILlmClient LlmClient) CreateLlmClient(
+    public ILlmClient CreateLlmClient(
         string? modelString = null,
         ThinkingConfig? thinkingConfig = null)
     {
@@ -161,7 +161,7 @@ public sealed class ConfigurationService
         };
     }
 
-    private static (HttpClient, ILlmClient) CreateAnthropicClient(
+    private static ILlmClient CreateAnthropicClient(
         string baseUrl, string apiKey, string model, int maxTokens, ThinkingConfig? thinkingConfig)
     {
         var httpClient = new HttpClient
@@ -173,17 +173,17 @@ public sealed class ConfigurationService
                 { "anthropic-version", "2023-06-01" }
             }
         };
-        return (httpClient, new AnthropicClient(httpClient, model, maxTokens, thinkingConfig));
+        return new AnthropicClient(httpClient, model, maxTokens, thinkingConfig);
     }
 
-    private static (HttpClient, ILlmClient) CreateOpenAiClient(string baseUrl, string apiKey, string model)
+    private static ILlmClient CreateOpenAiClient(string baseUrl, string apiKey, string model)
     {
         var httpClient = new HttpClient
         {
             BaseAddress = new Uri(baseUrl),
             DefaultRequestHeaders = { { "Authorization", $"Bearer {apiKey}" } }
         };
-        return (httpClient, new OpenAiClient(httpClient, model));
+        return new OpenAiClient(httpClient, model);
     }
 
     public string GetCurrentModelName()
