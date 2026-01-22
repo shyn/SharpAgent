@@ -1,0 +1,5 @@
+- [x] Add search tool with duckduckgo (https://github.com/open-webui/open-webui/blob/a7271532/backend/open_webui/retrieval/web/duckduckgo.py)
+- [ ] Add  fetch tool which fetch a webpage returns markdown
+- [ ] Add subagent support
+- [x] Support AGENTS.md
+- [ ] Support skills
