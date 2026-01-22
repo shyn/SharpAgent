@@ -37,6 +37,8 @@ public sealed class AnthropicClient : ILlmClient
         _logger = logger ?? NullLogger<AnthropicClient>.Instance;
     }
 
+    public void Dispose() => _httpClient.Dispose();
+
     public async Task<LlmResponse> GetCompletionAsync(
         IReadOnlyList<Message> messages,
         IReadOnlyList<ITool> tools,
@@ -253,7 +255,7 @@ public sealed class AnthropicClient : ILlmClient
         }
     }
 
-    private static AnthropicMessage ToAnthropicMessage(Message m) => new()
+    private AnthropicMessage ToAnthropicMessage(Message m) => new()
     {
         Role = m.Role switch
         {
@@ -277,7 +279,7 @@ public sealed class AnthropicClient : ILlmClient
                 : new object[] { new AnthropicTextContent { Type = "text", Text = m.Content } }
     };
 
-    private static object[] CreateAssistantContent(Message m)
+    private object[] CreateAssistantContent(Message m)
     {
         var content = new List<object>();
 
@@ -294,12 +296,24 @@ public sealed class AnthropicClient : ILlmClient
 
         foreach (var tc in m.ToolCalls!)
         {
+            JsonElement input;
+            try
+            {
+                input = JsonSerializer.Deserialize<JsonElement>(tc.Arguments);
+            }
+            catch (JsonException)
+            {
+                _logger.LogWarning("LLM returned malformed JSON, using empty object as fallback");
+                // LLM returned malformed JSON, use empty object as fallback
+                input = JsonSerializer.Deserialize<JsonElement>("{}");
+            }
+            
             content.Add(new AnthropicToolUse
             {
                 Type = "tool_use",
                 Id = tc.Id,
                 Name = tc.Name,
-                Input = JsonSerializer.Deserialize<JsonElement>(tc.Arguments)
+                Input = input
             });
         }
 

@@ -27,6 +27,8 @@ public sealed class OpenAiClient : ILlmClient
         _logger = logger ?? NullLogger<OpenAiClient>.Instance;
     }
 
+    public void Dispose() => _httpClient.Dispose();
+
     public async Task<LlmResponse> GetCompletionAsync(
         IReadOnlyList<Message> messages,
         IReadOnlyList<ITool> tools,

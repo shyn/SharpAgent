@@ -14,3 +14,9 @@ public sealed record AgentToolCallStartedEvent(string ToolCallId, string ToolNam
 public sealed record AgentToolCallCompletedEvent(string ToolCallId, string Result, bool IsError) : AgentStreamEvent;
 public sealed record AgentCompletedEvent(string FinalAnswer) : AgentStreamEvent;
 public sealed record AgentErrorEvent(string Message, string? ExceptionType = null) : AgentStreamEvent;
+
+/// <summary>
+/// Emitted with all new messages generated during this agent run.
+/// Used by sessions to persist conversation history.
+/// </summary>
+public sealed record AgentMessagesEvent(IReadOnlyList<Message> NewMessages) : AgentStreamEvent;
