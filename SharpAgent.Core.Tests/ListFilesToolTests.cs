@@ -7,12 +7,14 @@ public class ListFilesToolTests
 {
     private readonly ListFilesTool _tool = new();
 
+    private record FileEntry(string Name, string Type);
+
     [Fact]
     public async Task Execute_CurrentDirectory_ReturnsJsonArray()
     {
         var result = await _tool.ExecuteAsync("{}");
         
-        var files = JsonSerializer.Deserialize<string[]>(result);
+        var files = JsonSerializer.Deserialize<FileEntry[]>(result, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         Assert.NotNull(files);
         Assert.NotEmpty(files);
     }
@@ -28,11 +30,11 @@ public class ListFilesToolTests
         try
         {
             var result = await _tool.ExecuteAsync($"{{\"path\": \"{tempDir.Replace("\\", "\\\\")}\"}}");
-            var files = JsonSerializer.Deserialize<string[]>(result);
+            var files = JsonSerializer.Deserialize<FileEntry[]>(result, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
             Assert.NotNull(files);
-            Assert.Contains("test.txt", files);
-            Assert.Contains("subdir/", files);
+            Assert.Contains(files, f => f.Name == "test.txt");
+            Assert.Contains(files, f => f.Name == "subdir/");
         }
         finally
         {

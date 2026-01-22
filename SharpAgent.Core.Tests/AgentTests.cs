@@ -37,7 +37,7 @@ public class AgentTests
         llm.StreamCompletionAsync(Arg.Any<IReadOnlyList<Message>>(), Arg.Any<IReadOnlyList<ITool>>(), Arg.Any<CancellationToken>())
             .Returns(CreateStreamEvents("Hello, I can help you with that!"));
 
-        var agent = new Agent(llm, []);
+        var agent = new Agent(llm, [], new AgentOptions());
 
         var result = await agent.RunAsync("Say hello");
 
@@ -62,7 +62,7 @@ public class AgentTests
                     : CreateStreamEvents("The answer is 4.");
             });
 
-        var agent = new Agent(llm, [tool]);
+        var agent = new Agent(llm, [tool], new AgentOptions());
 
         var result = await agent.RunAsync("What is 2+2?");
 
@@ -81,7 +81,7 @@ public class AgentTests
         llm.StreamCompletionAsync(Arg.Any<IReadOnlyList<Message>>(), Arg.Any<IReadOnlyList<ITool>>(), Arg.Any<CancellationToken>())
             .Returns(CreateStreamEvents(null, [new ToolCall("call_1", "loop", "go")]));
 
-        var agent = new Agent(llm, [tool], maxIterations: 3);
+        var agent = new Agent(llm, [tool], new AgentOptions { MaxIterations = 3 });
 
         var events = new List<Streaming.AgentStreamEvent>();
         await foreach (var evt in agent.RunStreamingAsync("Loop forever"))
