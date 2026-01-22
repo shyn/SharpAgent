@@ -3,119 +3,77 @@ using System.Drawing.Drawing2D;
 
 namespace SharpAgent.WinForms;
 
-public sealed class ConfigDialog : Form
+public sealed partial class ConfigDialog : Form
 {
     private readonly ConfigurationService _configService;
-    private readonly ComboBox _defaultModelCombo;
-    private readonly TextBox _openAiKeyBox;
-    private readonly TextBox _openAiBaseUrlBox;
-    private readonly TextBox _anthropicKeyBox;
-    private readonly TextBox _anthropicBaseUrlBox;
 
     public ConfigDialog(ConfigurationService configService)
     {
         _configService = configService;
 
-        Text = "Settings";
-        Size = new Size(520, 480);
-        StartPosition = FormStartPosition.CenterParent;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        MinimizeBox = false;
-        BackColor = Theme.Background;
-
-        var mainPanel = new Panel
+        InitializeComponent();
+        
+        // Wire up button events
+        _saveButton.Click += SaveButton_Click;
+        _cancelButton.Click += (_, _) => Close();
+        
+        // Add button panel border paint
+        _buttonPanel.Paint += (s, e) =>
         {
-            Dock = DockStyle.Fill,
-            Padding = new Padding(Theme.GutterLarge + Theme.SpacingSmall),
-            AutoScroll = true,
-            BackColor = Color.Transparent
-        };
-
-        var y = Theme.Gutter;
-
-        AddLabel(mainPanel, "Default Model:", ref y);
-        _defaultModelCombo = new ComboBox
-        {
-            Location = new Point(Theme.GutterLarge + Theme.SpacingSmall, y),
-            Width = 300,
-            DropDownStyle = ComboBoxStyle.DropDown,
-            BackColor = Theme.BackgroundTertiary,
-            ForeColor = Theme.TextPrimary,
-            FlatStyle = FlatStyle.Flat,
-            Font = Theme.FontRegular
+            using var borderPen = new Pen(Theme.BorderSubtle, 1);
+            e.Graphics.DrawLine(borderPen, 0, 0, _buttonPanel.Width, 0);
         };
         
-        // Populate with available models from all providers
-        foreach (var provider in configService.Config.Providers)
+        // Build the main panel content with dynamic layout
+        BuildMainPanelContent();
+        
+        // Populate models and load config
+        PopulateModels();
+        LoadConfig();
+    }
+
+    private void BuildMainPanelContent()
+    {
+        var y = Theme.Gutter;
+
+        AddLabel(_mainPanel, "Default Model:", ref y);
+        _defaultModelCombo.Location = new Point(Theme.GutterLarge + Theme.SpacingSmall, y);
+        _mainPanel.Controls.Add(_defaultModelCombo);
+        y += Theme.GutterLarge * 2;
+
+        AddSectionHeader(_mainPanel, "OpenAI Settings", ref y);
+
+        AddLabel(_mainPanel, "API Key:", ref y);
+        _openAiKeyBox.Location = new Point(Theme.GutterLarge + Theme.SpacingSmall, y);
+        _mainPanel.Controls.Add(_openAiKeyBox);
+        y += Theme.ButtonSize.Height;
+
+        AddLabel(_mainPanel, "Base URL:", ref y);
+        _openAiBaseUrlBox.Location = new Point(Theme.GutterLarge + Theme.SpacingSmall, y);
+        _mainPanel.Controls.Add(_openAiBaseUrlBox);
+        y += Theme.ButtonSize.Height;
+
+        AddSectionHeader(_mainPanel, "Anthropic Settings", ref y);
+
+        AddLabel(_mainPanel, "API Key:", ref y);
+        _anthropicKeyBox.Location = new Point(Theme.GutterLarge + Theme.SpacingSmall, y);
+        _mainPanel.Controls.Add(_anthropicKeyBox);
+        y += Theme.ButtonSize.Height;
+
+        AddLabel(_mainPanel, "Base URL:", ref y);
+        _anthropicBaseUrlBox.Location = new Point(Theme.GutterLarge + Theme.SpacingSmall, y);
+        _mainPanel.Controls.Add(_anthropicBaseUrlBox);
+    }
+
+    private void PopulateModels()
+    {
+        foreach (var provider in _configService.Config.Providers)
         {
             foreach (var model in provider.Models)
             {
                 _defaultModelCombo.Items.Add($"{provider.Id}/{model.Id}");
             }
         }
-        mainPanel.Controls.Add(_defaultModelCombo);
-        y += Theme.GutterLarge * 2;
-
-        AddSectionHeader(mainPanel, "OpenAI Settings", ref y);
-
-        AddLabel(mainPanel, "API Key:", ref y);
-        _openAiKeyBox = CreateTextBox(mainPanel, ref y, true);
-
-        AddLabel(mainPanel, "Base URL:", ref y);
-        _openAiBaseUrlBox = CreateTextBox(mainPanel, ref y);
-
-        AddSectionHeader(mainPanel, "Anthropic Settings", ref y);
-
-        AddLabel(mainPanel, "API Key:", ref y);
-        _anthropicKeyBox = CreateTextBox(mainPanel, ref y, true);
-
-        AddLabel(mainPanel, "Base URL:", ref y);
-        _anthropicBaseUrlBox = CreateTextBox(mainPanel, ref y);
-
-        Controls.Add(mainPanel);
-
-        var buttonPanel = new Panel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 60,
-            BackColor = Theme.BackgroundSecondary
-        };
-        
-        buttonPanel.Paint += (s, e) =>
-        {
-            using var borderPen = new Pen(Theme.BorderSubtle, 1);
-            e.Graphics.DrawLine(borderPen, 0, 0, buttonPanel.Width, 0);
-        };
-
-        var saveButton = CreateModernButton("Save", Theme.AccentPrimary, Width - 210, Theme.GutterSmall);
-        saveButton.Click += SaveButton_Click;
-
-        var cancelButton = CreateModernButton("Cancel", Theme.ButtonDefault, Width - 110, Theme.GutterSmall);
-        cancelButton.Click += (_, _) => Close();
-
-        buttonPanel.Controls.Add(saveButton);
-        buttonPanel.Controls.Add(cancelButton);
-        Controls.Add(buttonPanel);
-
-        LoadConfig();
-    }
-
-    private static Button CreateModernButton(string text, Color bgColor, int x, int y)
-    {
-        var btn = new Button
-        {
-            Text = text,
-            Size = Theme.ButtonSize,
-            Location = new Point(x, y),
-            BackColor = bgColor,
-            ForeColor = Theme.TextPrimary,
-            FlatStyle = FlatStyle.Flat,
-            Font = Theme.FontMedium,
-            Cursor = Cursors.Hand
-        };
-        btn.FlatAppearance.BorderSize = 0;
-        return btn;
     }
 
     private void AddLabel(Panel parent, string text, ref int y)
@@ -176,23 +134,6 @@ public sealed class ConfigDialog : Form
         return path;
     }
 
-    private TextBox CreateTextBox(Panel parent, ref int y, bool isPassword = false)
-    {
-        var box = new TextBox
-        {
-            Location = new Point(Theme.GutterLarge + Theme.SpacingSmall, y),
-            Width = 440,
-            BackColor = Theme.BackgroundTertiary,
-            ForeColor = Theme.TextPrimary,
-            BorderStyle = BorderStyle.FixedSingle,
-            Font = Theme.FontRegular
-        };
-        if (isPassword) box.UseSystemPasswordChar = true;
-        parent.Controls.Add(box);
-        y += Theme.ButtonSize.Height;
-        return box;
-    }
-
     private void LoadConfig()
     {
         var config = _configService.Config;
@@ -241,4 +182,3 @@ public sealed class ConfigDialog : Form
         Close();
     }
 }
-
