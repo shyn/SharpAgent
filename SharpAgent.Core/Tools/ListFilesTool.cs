@@ -5,6 +5,7 @@ namespace SharpAgent.Core.Tools;
 public sealed class ListFilesTool : ITool
 {
     public string Name => "list_files";
+    public string? WorkingDirectory { get; set; }
     public string Description => "List files and directories at a given path (non-recursive). Returns name and type (extension or 'directory') for each entry. Directories have a trailing '/'. If no path is provided, lists files in the current directory.";
 
     public object ParametersSchema => new
@@ -19,6 +20,7 @@ public sealed class ListFilesTool : ITool
         {
             var path = ParsePath(input);
             var dir = string.IsNullOrEmpty(path) ? "." : path;
+            dir = ResolvePath(dir);
 
             if (!Directory.Exists(dir))
                 return Task.FromResult($"Error: Directory not found: {dir}");
@@ -46,6 +48,15 @@ public sealed class ListFilesTool : ITool
         {
             return Task.FromResult($"Error: {ex.Message}");
         }
+    }
+
+    private string ResolvePath(string path)
+    {
+        if (Path.IsPathRooted(path))
+            return path;
+        
+        var basePath = WorkingDirectory ?? Directory.GetCurrentDirectory();
+        return Path.GetFullPath(Path.Combine(basePath, path));
     }
 
     private static string ParsePath(string input)

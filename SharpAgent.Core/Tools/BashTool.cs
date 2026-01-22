@@ -11,6 +11,7 @@ public sealed class BashTool : ITool
     private const int DefaultTimeoutSeconds = 120;
 
     public string Name => "bash";
+    public string? WorkingDirectory { get; set; }
     public string Description =>
         $"Execute a bash command in the current working directory. Returns stdout and stderr. " +
         $"Output is truncated to last {DefaultMaxLines} lines or {DefaultMaxBytes / 1024}KB (whichever is hit first). " +
@@ -47,7 +48,8 @@ public sealed class BashTool : ITool
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
-                CreateNoWindow = true
+                CreateNoWindow = true,
+                WorkingDirectory = WorkingDirectory ?? Environment.CurrentDirectory
             };
 
             var output = new StringBuilder();

@@ -7,6 +7,7 @@ namespace SharpAgent.Core.Tools;
 public sealed class GlobTool : ITool
 {
     public string Name => "glob";
+    public string? WorkingDirectory { get; set; }
     public string Description => """
 Find files and directories using glob patterns. This tool supports standard glob syntax like `*`, `?`, and `**` for recursive searches.
 The 'pattern' param is REQUIRED
@@ -48,10 +49,12 @@ The 'pattern' param is REQUIRED
             if (string.IsNullOrWhiteSpace(pattern))
                 return Task.FromResult("Error: Pattern is required");
 
-            var searchDir = string.IsNullOrEmpty(basePath) ? Directory.GetCurrentDirectory() : basePath;
+            var searchDir = string.IsNullOrEmpty(basePath) 
+                ? (WorkingDirectory ?? Directory.GetCurrentDirectory()) 
+                : basePath;
 
             if (!Path.IsPathRooted(searchDir))
-                searchDir = Path.GetFullPath(searchDir);
+                searchDir = ResolvePath(searchDir);
 
             if (!Directory.Exists(searchDir))
                 return Task.FromResult($"Error: Directory not found: {searchDir}");
@@ -79,6 +82,15 @@ The 'pattern' param is REQUIRED
         {
             return Task.FromResult($"Error: {ex.Message}");
         }
+    }
+
+    private string ResolvePath(string path)
+    {
+        if (Path.IsPathRooted(path))
+            return path;
+        
+        var basePath = WorkingDirectory ?? Directory.GetCurrentDirectory();
+        return Path.GetFullPath(Path.Combine(basePath, path));
     }
 
     private static (string pattern, string path) ParseInput(string input)

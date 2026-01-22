@@ -5,6 +5,7 @@ namespace SharpAgent.Core.Tools;
 public sealed class ReadFileTool : ITool
 {
     public string Name => "read_file";
+    public string? WorkingDirectory { get; set; }
     public string Description => "Read the contents of a given relative file path. Use this when you want to see what's inside a file. Do not use this with directory names.";
 
     public object ParametersSchema => new
@@ -19,6 +20,7 @@ public sealed class ReadFileTool : ITool
         try
         {
             var path = ParsePath(input);
+            path = ResolvePath(path);
 
             if (Directory.Exists(path))
                 return "Error: Path is a directory, not a file.";
@@ -32,6 +34,15 @@ public sealed class ReadFileTool : ITool
         {
             return $"Error: {ex.Message}";
         }
+    }
+
+    private string ResolvePath(string path)
+    {
+        if (Path.IsPathRooted(path))
+            return path;
+        
+        var basePath = WorkingDirectory ?? Directory.GetCurrentDirectory();
+        return Path.GetFullPath(Path.Combine(basePath, path));
     }
 
     private static string ParsePath(string input)

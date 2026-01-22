@@ -11,6 +11,7 @@ public sealed class GrepTool : ITool
     private const int DefaultTimeoutSeconds = 60;
 
     public string Name => "grep";
+    public string? WorkingDirectory { get; set; }
     public string Description =>
         "Search for text patterns in files using ripgrep (rg) if available, otherwise falling back to grep. " +
         "The 'pattern' parameter is REQUIRED. Supports regex by default, case-insensitive search, and file filtering.";

@@ -2,7 +2,7 @@ using SharpAgent.Core.Streaming;
 
 namespace SharpAgent.Core;
 
-public interface ILlmClient
+public interface ILlmClient : IDisposable
 {
     Task<LlmResponse> GetCompletionAsync(
         IReadOnlyList<Message> messages,

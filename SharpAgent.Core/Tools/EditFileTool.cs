@@ -5,6 +5,7 @@ namespace SharpAgent.Core.Tools;
 public sealed class EditFileTool : ITool
 {
     public string Name => "edit_file";
+    public string? WorkingDirectory { get; set; }
     public string Description => """
         Make edits to a text file.
 
@@ -33,6 +34,8 @@ public sealed class EditFileTool : ITool
 
             if (string.IsNullOrEmpty(path))
                 return "Error: path is required";
+
+            path = ResolvePath(path);
 
             if (oldStr == newStr)
                 return "Error: old_str and new_str must be different";
@@ -65,6 +68,15 @@ public sealed class EditFileTool : ITool
         {
             return $"Error: {ex.Message}";
         }
+    }
+
+    private string ResolvePath(string path)
+    {
+        if (Path.IsPathRooted(path))
+            return path;
+        
+        var basePath = WorkingDirectory ?? Directory.GetCurrentDirectory();
+        return Path.GetFullPath(Path.Combine(basePath, path));
     }
 
     private static (string path, string oldStr, string newStr) ParseInput(string input)

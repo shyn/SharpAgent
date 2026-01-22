@@ -6,6 +6,7 @@ namespace SharpAgent.Core.Tools;
 public sealed class CalculatorTool : ITool
 {
     public string Name => "calculator";
+    public string? WorkingDirectory { get; set; }
     public string Description => "Evaluates a mathematical expression. Input: a math expression like '2 + 2' or '(10 * 5) / 2'";
 
     public object ParametersSchema => new
