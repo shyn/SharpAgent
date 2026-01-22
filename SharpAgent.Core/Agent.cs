@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using SharpAgent.Core.Skills;
 using SharpAgent.Core.Streaming;
 
 namespace SharpAgent.Core;
@@ -20,16 +21,55 @@ public sealed class Agent : IAgent
     public Agent(
         ILlmClient llmClient,
         IReadOnlyList<ITool> tools,
-        string systemPrompt = "You are a helpful assistant. Use tools when needed to accomplish tasks.",
-        int maxIterations = 20,
+        AgentOptions options,
         ILogger<Agent>? logger = null)
     {
         _llmClient = llmClient;
-        _tools = tools;
-        _toolsByName = tools.ToDictionary(t => t.Name);
-        _systemPrompt = systemPrompt;
-        _maxIterations = maxIterations;
         _logger = logger ?? NullLogger<Agent>.Instance;
+        _maxIterations = options.MaxIterations;
+
+        // Build system prompt, optionally including AGENTS.md content
+        var agentsMdContent = options.LoadAgentsMd
+            ? AgentsMdLoader.LoadAsync(options.WorkingDirectory).GetAwaiter().GetResult()
+            : null;
+
+        // Discover and load skills
+        IReadOnlyList<SkillMetadata> skills = [];
+        if (options.LoadSkills)
+        {
+            skills = SkillsLoader.DiscoverAsync(options.GetEffectiveSkillDirectories()).GetAwaiter().GetResult();
+            _logger.LogDebug("Discovered {SkillCount} skills", skills.Count);
+        }
+
+        // Build the final system prompt with skills
+        _systemPrompt = BuildSystemPromptWithSkills(options.SystemPrompt, agentsMdContent, skills);
+
+        _tools = tools;
+        _toolsByName = _tools.ToDictionary(t => t.Name);
+
+        if (options.WorkingDirectory is not null)
+        {
+            foreach (var tool in _tools)
+            {
+                tool.WorkingDirectory = options.WorkingDirectory;
+            }
+        }
+    }
+
+    private static string BuildSystemPromptWithSkills(
+        string basePrompt,
+        string? agentsMdContent,
+        IReadOnlyList<SkillMetadata> skills)
+    {
+        var prompt = AgentsMdLoader.BuildSystemPrompt(basePrompt, agentsMdContent);
+
+        if (skills.Count > 0)
+        {
+            var skillsPrompt = SkillsLoader.BuildAvailableSkillsPrompt(skills);
+            prompt = $"{prompt}\n\n{skillsPrompt}";
+        }
+
+        return prompt;
     }
 
     public async Task<string> RunAsync(string goal, CancellationToken ct = default)
@@ -47,13 +87,58 @@ public sealed class Agent : IAgent
         string goal, 
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        yield return new AgentStartedEvent(goal);
-
-        var messages = new List<Message>
+        var initialMessages = new List<Message>
         {
             new(Role.System, _systemPrompt),
             new(Role.User, goal)
         };
+
+        await foreach (var evt in RunCoreAsync(initialMessages, ct))
+        {
+            yield return evt;
+        }
+    }
+
+    public async IAsyncEnumerable<AgentStreamEvent> RunStreamingAsync(
+        IReadOnlyList<Message> existingMessages,
+        string userMessage,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        // Build messages list: existing + new user message
+        var messages = new List<Message>(existingMessages);
+        
+        // Ensure system prompt is first if not present
+        if (messages.Count == 0 || messages[0].Role != Role.System)
+        {
+            messages.Insert(0, new Message(Role.System, _systemPrompt));
+        }
+        
+        // Add the new user message
+        var userMsg = new Message(Role.User, userMessage);
+        messages.Add(userMsg);
+
+        yield return new AgentStartedEvent(userMessage);
+
+        // Track new messages for session persistence (starting with user message)
+        var newMessages = new List<Message> { userMsg };
+
+        await foreach (var evt in RunCoreAsync(messages, ct, newMessages))
+        {
+            yield return evt;
+        }
+    }
+
+    private async IAsyncEnumerable<AgentStreamEvent> RunCoreAsync(
+        List<Message> messages,
+        [EnumeratorCancellation] CancellationToken ct,
+        List<Message>? newMessagesTracker = null)
+    {
+        // For new conversations, emit started event
+        if (newMessagesTracker == null)
+        {
+            var goal = messages.LastOrDefault(m => m.Role == Role.User)?.Content ?? "";
+            yield return new AgentStartedEvent(goal);
+        }
 
         for (var i = 0; i < _maxIterations; i++)
         {
@@ -108,11 +193,24 @@ public sealed class Agent : IAgent
             if (toolCalls is null or { Count: 0 })
             {
                 _logger.LogInformation("Agent completed with response length: {Length}", content.Length);
+                
+                // Track assistant message
+                var assistantMsg = new Message(Role.Assistant, content, Thinking: thinkingContent);
+                newMessagesTracker?.Add(assistantMsg);
+                
+                // Emit new messages for session persistence
+                if (newMessagesTracker != null)
+                {
+                    yield return new AgentMessagesEvent(newMessagesTracker);
+                }
+                
                 yield return new AgentCompletedEvent(content);
                 yield break;
             }
 
-            messages.Add(new Message(Role.Assistant, content, ToolCalls: toolCalls, Thinking: thinkingContent));
+            var assistantMessage = new Message(Role.Assistant, content, ToolCalls: toolCalls, Thinking: thinkingContent);
+            messages.Add(assistantMessage);
+            newMessagesTracker?.Add(assistantMessage);
 
             foreach (var toolCall in toolCalls)
             {
@@ -127,11 +225,20 @@ public sealed class Agent : IAgent
                 yield return new AgentToolCallCompletedEvent(toolCall.Id, result, isError);
 
                 _logger.LogDebug("Tool result: {Result}", result.Length > 200 ? result[..200] + "..." : result);
-                messages.Add(new Message(Role.Tool, result, toolCall.Name, toolCall.Id));
+                var toolResultMsg = new Message(Role.Tool, result, toolCall.Name, toolCall.Id);
+                messages.Add(toolResultMsg);
+                newMessagesTracker?.Add(toolResultMsg);
             }
         }
 
         _logger.LogWarning("Agent exceeded maximum iterations ({MaxIterations})", _maxIterations);
+        
+        // Emit new messages even on error
+        if (newMessagesTracker != null)
+        {
+            yield return new AgentMessagesEvent(newMessagesTracker);
+        }
+        
         yield return new AgentErrorEvent($"Agent exceeded maximum iterations ({_maxIterations})");
     }
 
