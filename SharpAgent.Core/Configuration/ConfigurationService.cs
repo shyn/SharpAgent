@@ -173,7 +173,7 @@ public sealed class ConfigurationService
                 { "anthropic-version", "2023-06-01" }
             }
         };
-        return new AnthropicClient(httpClient, model, maxTokens, thinkingConfig);
+        return new AnthropicClient(httpClient, model, maxTokens, thinkingConfig, logger: null, ownsHttpClient: true);
     }
 
     private static ILlmClient CreateOpenAiClient(string baseUrl, string apiKey, string model)
@@ -183,7 +183,7 @@ public sealed class ConfigurationService
             BaseAddress = new Uri(baseUrl),
             DefaultRequestHeaders = { { "Authorization", $"Bearer {apiKey}" } }
         };
-        return new OpenAiClient(httpClient, model);
+        return new OpenAiClient(httpClient, model, logger: null, ownsHttpClient: true);
     }
 
     public string GetCurrentModelName()

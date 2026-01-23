@@ -14,7 +14,7 @@ public class ListFilesToolTests
     {
         var result = await _tool.ExecuteAsync("{}");
         
-        var files = JsonSerializer.Deserialize<FileEntry[]>(result, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var files = JsonSerializer.Deserialize<FileEntry[]>(result.Output, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         Assert.NotNull(files);
         Assert.NotEmpty(files);
     }
@@ -30,7 +30,7 @@ public class ListFilesToolTests
         try
         {
             var result = await _tool.ExecuteAsync($"{{\"path\": \"{tempDir.Replace("\\", "\\\\")}\"}}");
-            var files = JsonSerializer.Deserialize<FileEntry[]>(result, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            var files = JsonSerializer.Deserialize<FileEntry[]>(result.Output, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
             Assert.NotNull(files);
             Assert.Contains(files, f => f.Name == "test.txt");
@@ -46,6 +46,6 @@ public class ListFilesToolTests
     public async Task Execute_NonExistentPath_ReturnsError()
     {
         var result = await _tool.ExecuteAsync("{\"path\": \"nonexistent_dir_12345\"}");
-        Assert.StartsWith("Error:", result);
+        Assert.True(result.IsError);
     }
 }

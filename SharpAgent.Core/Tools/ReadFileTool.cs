@@ -15,7 +15,7 @@ public sealed class ReadFileTool : ITool
         required = new[] { "path" }
     };
 
-    public async Task<string> ExecuteAsync(string input, CancellationToken ct = default)
+    public async Task<ToolResult> ExecuteAsync(string input, CancellationToken ct = default)
     {
         try
         {
@@ -23,16 +23,16 @@ public sealed class ReadFileTool : ITool
             path = ResolvePath(path);
 
             if (Directory.Exists(path))
-                return "Error: Path is a directory, not a file.";
+                return ToolResult.Error("Path is a directory, not a file.", "INVALID_PATH");
 
             if (!File.Exists(path))
-                return $"Error: File not found: {path}";
+                return ToolResult.Error($"File not found: {path}", "NOT_FOUND");
 
-            return await File.ReadAllTextAsync(path, ct);
+            return ToolResult.Success(await File.ReadAllTextAsync(path, ct));
         }
         catch (Exception ex)
         {
-            return $"Error: {ex.Message}";
+            return ToolResult.Error(ex.Message, "EXECUTION_ERROR");
         }
     }
 

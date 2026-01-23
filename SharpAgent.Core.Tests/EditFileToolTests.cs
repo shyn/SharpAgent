@@ -14,7 +14,7 @@ public class EditFileToolTests
         try
         {
             var result = await _tool.ExecuteAsync($$"""{"path": "{{tempFile.Replace("\\", "\\\\")}}", "old_str": "World", "new_str": "Universe"}""");
-            Assert.Equal("OK", result);
+            Assert.Equal("OK", result.Output);
             Assert.Equal("Hello, Universe!", File.ReadAllText(tempFile));
         }
         finally
@@ -30,7 +30,7 @@ public class EditFileToolTests
         try
         {
             var result = await _tool.ExecuteAsync($$"""{"path": "{{tempFile.Replace("\\", "\\\\")}}", "old_str": "", "new_str": "New content"}""");
-            Assert.Equal("OK", result);
+            Assert.Equal("OK", result.Output);
             Assert.Equal("New content", File.ReadAllText(tempFile));
         }
         finally
@@ -47,8 +47,8 @@ public class EditFileToolTests
         try
         {
             var result = await _tool.ExecuteAsync($$"""{"path": "{{tempFile.Replace("\\", "\\\\")}}", "old_str": "NotHere", "new_str": "Something"}""");
-            Assert.StartsWith("Error:", result);
-            Assert.Contains("not found", result);
+            Assert.True(result.IsError);
+            Assert.Contains("not found", result.Output);
         }
         finally
         {
@@ -60,14 +60,14 @@ public class EditFileToolTests
     public async Task Execute_SameOldAndNew_ReturnsError()
     {
         var result = await _tool.ExecuteAsync("""{"path": "test.txt", "old_str": "same", "new_str": "same"}""");
-        Assert.StartsWith("Error:", result);
-        Assert.Contains("different", result);
+        Assert.True(result.IsError);
+        Assert.Contains("different", result.Output);
     }
 
     [Fact]
     public async Task Execute_NonExistentFileWithOldStr_ReturnsError()
     {
         var result = await _tool.ExecuteAsync("""{"path": "nonexistent_12345.txt", "old_str": "find", "new_str": "replace"}""");
-        Assert.StartsWith("Error:", result);
+        Assert.True(result.IsError);
     }
 }

@@ -37,7 +37,7 @@ var llmClient = configService.CreateLlmClient();
 var tools = new ITool[] { new ReadFileTool(), new ListFilesTool(), new BashTool(), new GlobTool(), new GrepTool(), new EditFileTool() };
 var agentLogger = loggerFactory.CreateLogger<Agent>();
 var agentOptions = new AgentOptions();
-var agent = new Agent(llmClient, tools, agentOptions, agentLogger);
+var agent = await Agent.CreateAsync(llmClient, tools, agentOptions, agentLogger);
 
 // Session message history - persists across the conversation loop
 var sessionMessages = new List<Message>();
@@ -125,9 +125,9 @@ while (true)
                 configService.SetCurrentModel(selected);
 
                 // Recreate LLM client and agent with new model
-                llmClient.Dispose();
+                (llmClient as IDisposable)?.Dispose();
                 llmClient = configService.CreateLlmClient();
-                agent = new Agent(llmClient, tools, agentOptions, agentLogger);
+                agent = await Agent.CreateAsync(llmClient, tools, agentOptions, agentLogger);
                 
                 // Clear session history when switching models
                 sessionMessages.Clear();
@@ -246,6 +246,6 @@ while (true)
     }
 }
 
-llmClient.Dispose();
+(llmClient as IDisposable)?.Dispose();
 
 

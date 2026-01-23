@@ -116,7 +116,7 @@ public partial class MainForm : Form
         base.OnShown(e);
         // Pre-initialize agent to avoid first-request latency
         // Use a small delay to allow UI to fully render first
-        Task.Delay(100).ContinueWith(_ => SafeInvoke(EnsureAgentInitialized));
+        Task.Delay(100).ContinueWith(_ => SafeInvoke(async () => await EnsureAgentInitializedAsync()));
     }
 
     private void ProviderCombo_SelectedIndexChanged(object? sender, EventArgs e)
@@ -145,7 +145,7 @@ public partial class MainForm : Form
 
     private void ResetAgent()
     {
-        _llmClient?.Dispose();
+        (_llmClient as IDisposable)?.Dispose();
         _llmClient = null;
         _agent = null;
     }
@@ -176,7 +176,7 @@ public partial class MainForm : Form
 
         try
         {
-            EnsureAgentInitialized();
+            await EnsureAgentInitializedAsync();
             if (_agent == null)
             {
                 _chatPanel.AddErrorMessage("Agent not initialized. Check your API key in settings.");
@@ -235,7 +235,7 @@ public partial class MainForm : Form
         _statusLabel.ForeColor = running ? Theme.FocusRing : Theme.TextMuted;
     }
 
-    private void EnsureAgentInitialized()
+    private async Task EnsureAgentInitializedAsync()
     {
         if (_agent != null) return;
 
@@ -252,7 +252,7 @@ public partial class MainForm : Form
         _statusLabel.Text = $"{_configService.GetCurrentModelName()}{thinkingStatus}";
 
         var tools = new ITool[] { new CalculatorTool(), new ReadFileTool(), new ListFilesTool(), new BashTool(), new GlobTool(), new GrepTool() };
-        _agent = new Agent(_llmClient, tools, new AgentOptions());
+        _agent = await Agent.CreateAsync(_llmClient, tools, new AgentOptions());
     }
 
     private async Task ProcessAgentResponseAsync(string message, CancellationToken ct)
@@ -345,7 +345,7 @@ public partial class MainForm : Form
     {
         _isDisposed = true;
         _cts?.Cancel();
-        _llmClient?.Dispose();
+        (_llmClient as IDisposable)?.Dispose();
         base.OnFormClosing(e);
     }
 }

@@ -37,7 +37,7 @@ public class AgentTests
         llm.StreamCompletionAsync(Arg.Any<IReadOnlyList<Message>>(), Arg.Any<IReadOnlyList<ITool>>(), Arg.Any<CancellationToken>())
             .Returns(CreateStreamEvents("Hello, I can help you with that!"));
 
-        var agent = new Agent(llm, [], new AgentOptions());
+        var agent = await Agent.CreateAsync(llm, [], new AgentOptions());
 
         var result = await agent.RunAsync("Say hello");
 
@@ -50,7 +50,7 @@ public class AgentTests
         var llm = Substitute.For<ILlmClient>();
         var tool = Substitute.For<ITool>();
         tool.Name.Returns("calculator");
-        tool.ExecuteAsync("2+2", Arg.Any<CancellationToken>()).Returns("4");
+        tool.ExecuteAsync("2+2", Arg.Any<CancellationToken>()).Returns(Task.FromResult(ToolResult.Success("4")));
 
         var callCount = 0;
         llm.StreamCompletionAsync(Arg.Any<IReadOnlyList<Message>>(), Arg.Any<IReadOnlyList<ITool>>(), Arg.Any<CancellationToken>())
@@ -62,7 +62,7 @@ public class AgentTests
                     : CreateStreamEvents("The answer is 4.");
             });
 
-        var agent = new Agent(llm, [tool], new AgentOptions());
+        var agent = await Agent.CreateAsync(llm, [tool], new AgentOptions());
 
         var result = await agent.RunAsync("What is 2+2?");
 
@@ -76,12 +76,12 @@ public class AgentTests
         var llm = Substitute.For<ILlmClient>();
         var tool = Substitute.For<ITool>();
         tool.Name.Returns("loop");
-        tool.ExecuteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns("looping");
+        tool.ExecuteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(ToolResult.Success("looping")));
 
         llm.StreamCompletionAsync(Arg.Any<IReadOnlyList<Message>>(), Arg.Any<IReadOnlyList<ITool>>(), Arg.Any<CancellationToken>())
             .Returns(CreateStreamEvents(null, [new ToolCall("call_1", "loop", "go")]));
 
-        var agent = new Agent(llm, [tool], new AgentOptions { MaxIterations = 3 });
+        var agent = await Agent.CreateAsync(llm, [tool], new AgentOptions { MaxIterations = 3 });
 
         var events = new List<Streaming.AgentStreamEvent>();
         await foreach (var evt in agent.RunStreamingAsync("Loop forever"))

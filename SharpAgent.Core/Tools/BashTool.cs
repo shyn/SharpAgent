@@ -28,14 +28,14 @@ public sealed class BashTool : ITool
         required = new[] { "command" }
     };
 
-    public async Task<string> ExecuteAsync(string input, CancellationToken ct = default)
+    public async Task<ToolResult> ExecuteAsync(string input, CancellationToken ct = default)
     {
         try
         {
             var (command, timeout) = ParseInput(input);
 
             if (string.IsNullOrWhiteSpace(command))
-                return "Error: command is required";
+                return ToolResult.Error("command is required", "MISSING_PARAM");
 
             var shell = GetBashPath();
             var shellArg = "-c";
@@ -81,17 +81,17 @@ public sealed class BashTool : ITool
             catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
             {
                 try { process.Kill(entireProcessTree: true); } catch { }
-                return $"Error: Command timed out after {timeout} seconds";
+                return ToolResult.Error($"Command timed out after {timeout} seconds", "TIMEOUT");
             }
 
             var fullOutput = output.ToString();
             var result = TruncateOutput(fullOutput);
 
-            return $"Exit code: {process.ExitCode}\n{result}";
+            return ToolResult.Success($"Exit code: {process.ExitCode}\n{result}");
         }
         catch (Exception ex)
         {
-            return $"Error: {ex.Message}";
+            return ToolResult.Error(ex.Message, "EXECUTION_ERROR");
         }
     }
 

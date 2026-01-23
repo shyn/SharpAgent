@@ -14,13 +14,13 @@ public class CalculatorToolTests
     public async Task Execute_ValidExpression_ReturnsResult(string input, string expected)
     {
         var result = await _tool.ExecuteAsync(input);
-        Assert.Equal(expected, result);
+        Assert.Equal(expected, result.Output);
     }
 
     [Fact]
     public async Task Execute_InvalidExpression_ReturnsError()
     {
         var result = await _tool.ExecuteAsync("not a math expression");
-        Assert.StartsWith("Error:", result);
+        Assert.True(result.IsError);
     }
 }
