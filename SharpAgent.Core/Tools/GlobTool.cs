@@ -40,14 +40,14 @@ The 'pattern' param is REQUIRED
         required = new[] { "pattern" }
     };
 
-    public Task<string> ExecuteAsync(string input, CancellationToken ct = default)
+    public Task<ToolResult> ExecuteAsync(string input, CancellationToken ct = default)
     {
         try
         {
             var (pattern, basePath) = ParseInput(input);
 
             if (string.IsNullOrWhiteSpace(pattern))
-                return Task.FromResult("Error: Pattern is required");
+                return Task.FromResult(ToolResult.Error("Pattern is required", "MISSING_PARAM"));
 
             var searchDir = string.IsNullOrEmpty(basePath) 
                 ? (WorkingDirectory ?? Directory.GetCurrentDirectory()) 
@@ -57,7 +57,7 @@ The 'pattern' param is REQUIRED
                 searchDir = ResolvePath(searchDir);
 
             if (!Directory.Exists(searchDir))
-                return Task.FromResult($"Error: Directory not found: {searchDir}");
+                return Task.FromResult(ToolResult.Error($"Directory not found: {searchDir}", "NOT_FOUND"));
 
             var matcher = new Matcher();
             matcher.AddInclude(pattern);
@@ -70,17 +70,17 @@ The 'pattern' param is REQUIRED
                 .OrderBy(f => f)
                 .ToList();
 
-            return Task.FromResult(JsonSerializer.Serialize(new
+            return Task.FromResult(ToolResult.Success(JsonSerializer.Serialize(new
             {
                 basePath = searchDir,
                 pattern,
                 matchCount = files.Count,
                 files
-            }));
+            })));
         }
         catch (Exception ex)
         {
-            return Task.FromResult($"Error: {ex.Message}");
+            return Task.FromResult(ToolResult.Error(ex.Message, "EXECUTION_ERROR"));
         }
     }
 

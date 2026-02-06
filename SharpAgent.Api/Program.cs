@@ -88,7 +88,7 @@ app.MapPost("/api/chat", async (HttpContext context, ConfigurationService config
             new GlobTool()
         };
 
-        var agent = new Agent(llmClient, tools);
+        var agent = await Agent.CreateAsync(llmClient, tools, new AgentOptions());
 
         context.Response.ContentType = "text/event-stream";
         context.Response.Headers.CacheControl = "no-cache";

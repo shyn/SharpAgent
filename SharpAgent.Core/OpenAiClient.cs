@@ -7,9 +7,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace SharpAgent.Core;
 
-public sealed class OpenAiClient : ILlmClient
+public sealed class OpenAiClient : ILlmClient, IDisposable
 {
     private readonly HttpClient _httpClient;
+    private readonly bool _ownsHttpClient;
     private readonly string _model;
     private readonly ILogger<OpenAiClient> _logger;
 
@@ -20,14 +21,19 @@ public sealed class OpenAiClient : ILlmClient
         WriteIndented = true
     };
 
-    public OpenAiClient(HttpClient httpClient, string model = "gpt-4o-mini", ILogger<OpenAiClient>? logger = null)
+    public OpenAiClient(HttpClient httpClient, string model = "gpt-4o-mini", ILogger<OpenAiClient>? logger = null, bool ownsHttpClient = false)
     {
         _httpClient = httpClient;
+        _ownsHttpClient = ownsHttpClient;
         _model = model;
         _logger = logger ?? NullLogger<OpenAiClient>.Instance;
     }
 
-    public void Dispose() => _httpClient.Dispose();
+    public void Dispose()
+    {
+        if (_ownsHttpClient)
+            _httpClient.Dispose();
+    }
 
     public async Task<LlmResponse> GetCompletionAsync(
         IReadOnlyList<Message> messages,

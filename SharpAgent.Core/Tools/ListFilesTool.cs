@@ -14,7 +14,7 @@ public sealed class ListFilesTool : ITool
         properties = new { path = new { type = "string", description = "The directory path to list (optional, defaults to current directory)" } }
     };
 
-    public Task<string> ExecuteAsync(string input, CancellationToken ct = default)
+    public Task<ToolResult> ExecuteAsync(string input, CancellationToken ct = default)
     {
         try
         {
@@ -23,7 +23,7 @@ public sealed class ListFilesTool : ITool
             dir = ResolvePath(dir);
 
             if (!Directory.Exists(dir))
-                return Task.FromResult($"Error: Directory not found: {dir}");
+                return Task.FromResult(ToolResult.Error($"Directory not found: {dir}", "NOT_FOUND"));
 
             var entries = Directory.GetFileSystemEntries(dir);
             var fileInfo = entries.Select(entry =>
@@ -42,11 +42,11 @@ public sealed class ListFilesTool : ITool
                 };
             }).OrderBy(x => x.type == "directory" ? 0 : 1).ThenBy(x => x.name.TrimEnd('/'));
 
-            return Task.FromResult(JsonSerializer.Serialize(fileInfo));
+            return Task.FromResult(ToolResult.Success(JsonSerializer.Serialize(fileInfo)));
         }
         catch (Exception ex)
         {
-            return Task.FromResult($"Error: {ex.Message}");
+            return Task.FromResult(ToolResult.Error(ex.Message, "EXECUTION_ERROR"));
         }
     }
 

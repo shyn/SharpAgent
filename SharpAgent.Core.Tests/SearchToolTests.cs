@@ -14,7 +14,7 @@ public class SearchToolTests
 
         var result = await tool.ExecuteAsync("");
 
-        Assert.StartsWith("Error:", result);
+        Assert.True(result.IsError);
     }
 
     [Fact]
@@ -25,7 +25,7 @@ public class SearchToolTests
 
         var result = await tool.ExecuteAsync("""{"query": ""}""");
 
-        Assert.StartsWith("Error:", result);
+        Assert.True(result.IsError);
     }
 
     [Fact]
@@ -41,10 +41,10 @@ public class SearchToolTests
 
         var result = await tool.ExecuteAsync("""{"query": "test", "max_results": 5}""");
 
-        Assert.Contains("[1] Title One", result);
-        Assert.Contains("URL: https://example.com/1", result);
-        Assert.Contains("Snippet one", result);
-        Assert.Contains("[2] Title Two", result);
+        Assert.Contains("[1] Title One", result.Output);
+        Assert.Contains("URL: https://example.com/1", result.Output);
+        Assert.Contains("Snippet one", result.Output);
+        Assert.Contains("[2] Title Two", result.Output);
     }
 
     [Fact]
@@ -57,7 +57,7 @@ public class SearchToolTests
 
         var result = await tool.ExecuteAsync("plain query");
 
-        Assert.Contains("[1] Result", result);
+        Assert.Contains("[1] Result", result.Output);
         await searchClient.Received(1).SearchAsync("plain query", 5, Arg.Any<CancellationToken>());
     }
 
@@ -71,7 +71,7 @@ public class SearchToolTests
 
         var result = await tool.ExecuteAsync("no results query");
 
-        Assert.Equal("No results found.", result);
+        Assert.Equal("No results found.", result.Output);
     }
 
     [Fact]
@@ -84,8 +84,8 @@ public class SearchToolTests
 
         var result = await tool.ExecuteAsync("test");
 
-        Assert.StartsWith("Error:", result);
-        Assert.Contains("timed out", result);
+        Assert.True(result.IsError);
+        Assert.Contains("timed out", result.Output);
     }
 
     [Fact]

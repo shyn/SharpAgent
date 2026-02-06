@@ -26,19 +26,19 @@ public sealed class EditFileTool : ITool
         required = new[] { "path", "new_str" }
     };
 
-    public async Task<string> ExecuteAsync(string input, CancellationToken ct = default)
+    public async Task<ToolResult> ExecuteAsync(string input, CancellationToken ct = default)
     {
         try
         {
             var (path, oldStr, newStr) = ParseInput(input);
 
             if (string.IsNullOrEmpty(path))
-                return "Error: path is required";
+                return ToolResult.Error("path is required", "MISSING_PARAM");
 
             path = ResolvePath(path);
 
             if (oldStr == newStr)
-                return "Error: old_str and new_str must be different";
+                return ToolResult.Error("old_str and new_str must be different", "INVALID_PARAM");
 
             if (!File.Exists(path))
             {
@@ -49,24 +49,24 @@ public sealed class EditFileTool : ITool
                         Directory.CreateDirectory(dir);
 
                     await File.WriteAllTextAsync(path, newStr, ct);
-                    return "OK";
+                    return ToolResult.Success("OK");
                 }
-                return $"Error: File not found: {path}";
+                return ToolResult.Error($"File not found: {path}", "NOT_FOUND");
             }
 
             var content = await File.ReadAllTextAsync(path, ct);
 
             if (!string.IsNullOrEmpty(oldStr) && !content.Contains(oldStr))
-                return "Error: old_str not found in file";
+                return ToolResult.Error("old_str not found in file", "NOT_FOUND");
 
             var newContent = content.Replace(oldStr, newStr);
             await File.WriteAllTextAsync(path, newContent, ct);
 
-            return "OK";
+            return ToolResult.Success("OK");
         }
         catch (Exception ex)
         {
-            return $"Error: {ex.Message}";
+            return ToolResult.Error(ex.Message, "EXECUTION_ERROR");
         }
     }
 

@@ -9,9 +9,10 @@ using SharpAgent.Core.Configuration;
 
 namespace SharpAgent.Core;
 
-public sealed class AnthropicClient : ILlmClient
+public sealed class AnthropicClient : ILlmClient, IDisposable
 {
     private readonly HttpClient _httpClient;
+    private readonly bool _ownsHttpClient;
     private readonly string _model;
     private readonly int _maxTokens;
     private readonly ThinkingConfig _thinkingConfig;
@@ -28,16 +29,22 @@ public sealed class AnthropicClient : ILlmClient
         string model = "claude-sonnet-4-20250514",
         int maxTokens = 8192,
         ThinkingConfig? thinkingConfig = null,
-        ILogger<AnthropicClient>? logger = null)
+        ILogger<AnthropicClient>? logger = null,
+        bool ownsHttpClient = false)
     {
         _httpClient = httpClient;
+        _ownsHttpClient = ownsHttpClient;
         _model = model;
         _maxTokens = maxTokens;
         _thinkingConfig = thinkingConfig ?? new ThinkingConfig();
         _logger = logger ?? NullLogger<AnthropicClient>.Instance;
     }
 
-    public void Dispose() => _httpClient.Dispose();
+    public void Dispose()
+    {
+        if (_ownsHttpClient)
+            _httpClient.Dispose();
+    }
 
     public async Task<LlmResponse> GetCompletionAsync(
         IReadOnlyList<Message> messages,

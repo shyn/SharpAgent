@@ -16,17 +16,19 @@ public sealed class CalculatorTool : ITool
         required = new[] { "expression" }
     };
 
-    public Task<string> ExecuteAsync(string input, CancellationToken ct = default)
+    public Task<ToolResult> ExecuteAsync(string input, CancellationToken ct = default)
     {
         try
         {
             var expression = ParseInput(input);
             var result = new DataTable().Compute(expression, null);
-            return Task.FromResult(result?.ToString() ?? "Error: null result");
+            if (result is null)
+                return Task.FromResult(ToolResult.Error("null result", "NULL_RESULT"));
+            return Task.FromResult(ToolResult.Success(result.ToString()!));
         }
         catch (Exception ex)
         {
-            return Task.FromResult($"Error: {ex.Message}");
+            return Task.FromResult(ToolResult.Error(ex.Message, "EXECUTION_ERROR"));
         }
     }
 

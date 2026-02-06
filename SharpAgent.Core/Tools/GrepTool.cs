@@ -30,14 +30,14 @@ public sealed class GrepTool : ITool
         required = new[] { "pattern" }
     };
 
-    public async Task<string> ExecuteAsync(string input, CancellationToken ct = default)
+    public async Task<ToolResult> ExecuteAsync(string input, CancellationToken ct = default)
     {
         try
         {
             var (pattern, path, isRegex, caseInsensitive, include) = ParseInput(input);
 
             if (string.IsNullOrWhiteSpace(pattern))
-                return "Error: 'pattern' parameter is required. Please provide a search pattern as a string (e.g., {\"pattern\": \"searchTerm\", \"path\": \".\"})";
+                return ToolResult.Error("'pattern' parameter is required. Please provide a search pattern as a string (e.g., {\"pattern\": \"searchTerm\", \"path\": \".\"}))", "MISSING_PARAM");
 
             var (exe, args) = PrepareCommand(pattern, path, isRegex, caseInsensitive, include);
 
@@ -82,22 +82,22 @@ public sealed class GrepTool : ITool
             catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
             {
                 try { process.Kill(entireProcessTree: true); } catch { }
-                return $"Error: Grep timed out after {DefaultTimeoutSeconds} seconds";
+                return ToolResult.Error($"Grep timed out after {DefaultTimeoutSeconds} seconds", "TIMEOUT");
             }
 
             var fullOutput = output.ToString();
             
             if (string.IsNullOrWhiteSpace(fullOutput) && process.ExitCode != 0)
             {
-                return $"No matches found (Exit code: {process.ExitCode})";
+                return ToolResult.Success($"No matches found (Exit code: {process.ExitCode})");
             }
 
             var result = TruncateOutput(fullOutput);
-            return result;
+            return ToolResult.Success(result);
         }
         catch (Exception ex)
         {
-            return $"Error: {ex.Message}";
+            return ToolResult.Error(ex.Message, "EXECUTION_ERROR");
         }
     }
 

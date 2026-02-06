@@ -14,7 +14,7 @@ public class ReadFileToolTests
         try
         {
             var result = await _tool.ExecuteAsync($"{{\"path\": \"{tempFile.Replace("\\", "\\\\")}\"}}");
-            Assert.Equal("Hello, World!", result);
+            Assert.Equal("Hello, World!", result.Output);
         }
         finally
         {
@@ -26,13 +26,13 @@ public class ReadFileToolTests
     public async Task Execute_NonExistentFile_ReturnsError()
     {
         var result = await _tool.ExecuteAsync("{\"path\": \"nonexistent_file_12345.txt\"}");
-        Assert.StartsWith("Error:", result);
+        Assert.True(result.IsError);
     }
 
     [Fact]
     public async Task Execute_Directory_ReturnsError()
     {
         var result = await _tool.ExecuteAsync("{\"path\": \".\"}");
-        Assert.StartsWith("Error:", result);
+        Assert.True(result.IsError);
     }
 }

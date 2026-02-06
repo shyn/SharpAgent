@@ -35,25 +35,25 @@ public sealed class SearchTool : ITool
         required = new[] { "query" }
     };
 
-    public async Task<string> ExecuteAsync(string input, CancellationToken ct = default)
+    public async Task<ToolResult> ExecuteAsync(string input, CancellationToken ct = default)
     {
         try
         {
             var (query, maxResults) = ParseInput(input);
 
             if (string.IsNullOrWhiteSpace(query))
-                return "Error: query is required";
+                return ToolResult.Error("query is required", "MISSING_PARAM");
 
             var results = await _searchClient.SearchAsync(query, maxResults, ct);
 
             if (results.Count == 0)
-                return "No results found.";
+                return ToolResult.Success("No results found.");
 
-            return FormatResults(results);
+            return ToolResult.Success(FormatResults(results));
         }
         catch (Exception ex)
         {
-            return $"Error: {ex.Message}";
+            return ToolResult.Error(ex.Message, "EXECUTION_ERROR");
         }
     }
 

@@ -31,8 +31,8 @@ public class GrepToolTests : IDisposable
 
         var result = await _tool.ExecuteAsync(input);
 
-        Assert.Contains("SharpAgent is cool", result);
-        Assert.Contains(_testFile, result);
+        Assert.Contains("SharpAgent is cool", result.Output);
+        Assert.Contains(_testFile, result.Output);
     }
 
     [Fact]
@@ -47,7 +47,7 @@ public class GrepToolTests : IDisposable
 
         var result = await _tool.ExecuteAsync(input);
 
-        Assert.Contains("SharpAgent is cool", result);
+        Assert.Contains("SharpAgent is cool", result.Output);
     }
 
     [Fact]
@@ -62,7 +62,7 @@ public class GrepToolTests : IDisposable
 
         var result = await _tool.ExecuteAsync(input);
 
-        Assert.Contains("Line with 123 numbers", result);
+        Assert.Contains("Line with 123 numbers", result.Output);
     }
 
     [Fact]
@@ -77,8 +77,7 @@ public class GrepToolTests : IDisposable
 
         var result = await _tool.ExecuteAsync(input);
 
-        // Should not match unless we literally have "L.*123" in the file
-        Assert.DoesNotContain("Line with 123 numbers", result);
+        Assert.DoesNotContain("Line with 123 numbers", result.Output);
     }
 
     [Fact]
@@ -92,6 +91,6 @@ public class GrepToolTests : IDisposable
 
         var result = await _tool.ExecuteAsync(input);
 
-        Assert.Contains("No matches found", result);
+        Assert.Contains("No matches found", result.Output);
     }
 }

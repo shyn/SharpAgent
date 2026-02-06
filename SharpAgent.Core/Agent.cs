@@ -16,44 +16,64 @@ public sealed class Agent : IAgent
     private readonly ILogger<Agent> _logger;
 
     public Action<ToolCall>? OnToolCallStarted { get; set; }
-    public Action<ToolCall, string>? OnToolCallCompleted { get; set; }
+    public Action<ToolCall, ToolResult>? OnToolCallCompleted { get; set; }
 
-    public Agent(
+    private Agent(
+        ILlmClient llmClient,
+        IReadOnlyList<ITool> tools,
+        string systemPrompt,
+        int maxIterations,
+        ILogger<Agent>? logger)
+    {
+        _llmClient = llmClient;
+        _tools = tools;
+        _systemPrompt = systemPrompt;
+        _maxIterations = maxIterations;
+        _logger = logger ?? NullLogger<Agent>.Instance;
+
+        // Validate no duplicate tool names
+        var duplicates = tools.GroupBy(t => t.Name).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+        if (duplicates.Count > 0)
+            throw new ArgumentException($"Duplicate tool names: {string.Join(", ", duplicates)}");
+
+        _toolsByName = tools.ToDictionary(t => t.Name);
+    }
+
+    public static async Task<Agent> CreateAsync(
         ILlmClient llmClient,
         IReadOnlyList<ITool> tools,
         AgentOptions options,
-        ILogger<Agent>? logger = null)
+        ILogger<Agent>? logger = null,
+        CancellationToken ct = default)
     {
-        _llmClient = llmClient;
-        _logger = logger ?? NullLogger<Agent>.Instance;
-        _maxIterations = options.MaxIterations;
+        var log = logger ?? NullLogger<Agent>.Instance;
 
         // Build system prompt, optionally including AGENTS.md content
         var agentsMdContent = options.LoadAgentsMd
-            ? AgentsMdLoader.LoadAsync(options.WorkingDirectory).GetAwaiter().GetResult()
+            ? await AgentsMdLoader.LoadAsync(options.WorkingDirectory, ct)
             : null;
 
         // Discover and load skills
         IReadOnlyList<SkillMetadata> skills = [];
         if (options.LoadSkills)
         {
-            skills = SkillsLoader.DiscoverAsync(options.GetEffectiveSkillDirectories()).GetAwaiter().GetResult();
-            _logger.LogDebug("Discovered {SkillCount} skills", skills.Count);
+            skills = await SkillsLoader.DiscoverAsync(options.GetEffectiveSkillDirectories(), ct);
+            log.LogDebug("Discovered {SkillCount} skills", skills.Count);
         }
 
         // Build the final system prompt with skills
-        _systemPrompt = BuildSystemPromptWithSkills(options.SystemPrompt, agentsMdContent, skills);
+        var systemPrompt = BuildSystemPromptWithSkills(options.SystemPrompt, agentsMdContent, skills);
 
-        _tools = tools;
-        _toolsByName = _tools.ToDictionary(t => t.Name);
-
+        // Set working directory on tools
         if (options.WorkingDirectory is not null)
         {
-            foreach (var tool in _tools)
+            foreach (var tool in tools)
             {
                 tool.WorkingDirectory = options.WorkingDirectory;
             }
         }
+
+        return new Agent(llmClient, tools, systemPrompt, options.MaxIterations, logger);
     }
 
     private static string BuildSystemPromptWithSkills(
@@ -219,13 +239,13 @@ public sealed class Agent : IAgent
                 yield return new AgentToolCallStartedEvent(toolCall.Id, toolCall.Name, toolCall.Arguments);
 
                 var result = await ExecuteToolAsync(toolCall, ct);
-                var isError = result.StartsWith("Error:");
 
                 OnToolCallCompleted?.Invoke(toolCall, result);
-                yield return new AgentToolCallCompletedEvent(toolCall.Id, result, isError);
+                yield return new AgentToolCallCompletedEvent(toolCall.Id, result.Output, result.IsError);
 
-                _logger.LogDebug("Tool result: {Result}", result.Length > 200 ? result[..200] + "..." : result);
-                var toolResultMsg = new Message(Role.Tool, result, toolCall.Name, toolCall.Id);
+                _logger.LogDebug("Tool result (isError={IsError}): {Result}", result.IsError, 
+                    result.Output.Length > 200 ? result.Output[..200] + "..." : result.Output);
+                var toolResultMsg = new Message(Role.Tool, result.Output, toolCall.Name, toolCall.Id);
                 messages.Add(toolResultMsg);
                 newMessagesTracker?.Add(toolResultMsg);
             }
@@ -242,12 +262,12 @@ public sealed class Agent : IAgent
         yield return new AgentErrorEvent($"Agent exceeded maximum iterations ({_maxIterations})");
     }
 
-    private async Task<string> ExecuteToolAsync(ToolCall toolCall, CancellationToken ct)
+    private async Task<ToolResult> ExecuteToolAsync(ToolCall toolCall, CancellationToken ct)
     {
         if (!_toolsByName.TryGetValue(toolCall.Name, out var tool))
         {
             _logger.LogWarning("Unknown tool requested: {ToolName}", toolCall.Name);
-            return $"Error: Unknown tool '{toolCall.Name}'";
+            return ToolResult.Error($"Unknown tool '{toolCall.Name}'", "UNKNOWN_TOOL");
         }
 
         try
@@ -257,7 +277,7 @@ public sealed class Agent : IAgent
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error executing tool {ToolName}", toolCall.Name);
-            return $"Error executing tool: {ex.Message}";
+            return ToolResult.Error($"Error executing tool: {ex.Message}", "EXECUTION_ERROR");
         }
     }
 }
