@@ -93,8 +93,16 @@ dotnet run --project Sharp.Cli -- repl
 - Default config path: `~/Library/Application Support/Sharp/config.json`
 - Provider `api` uses pi-style values:
   - `openai-completions`
+  - `openai-responses`
   - `anthropic-messages`
 - `api` is provider-level; model-level `api` is only kept for backward compatibility.
+- For `openai-completions`, optional per-model `compat` flags are supported, including:
+  - `supportsStore`, `supportsDeveloperRole`, `supportsReasoningEffort`
+  - `supportsUsageInStreaming`, `supportsStrictMode`
+  - `requiresToolResultName`, `requiresAssistantAfterToolResult`, `requiresMistralToolIds`, `requiresThinkingAsText`
+  - `maxTokensField`, `thinkingFormat` (`openai`/`zai`/`qwen`)
+  - `openRouterRouting`, `vercelGatewayRouting`
+- If `openai-completions` `compat` is omitted, SharpAgent infers known defaults from provider/baseUrl; explicit compat fields take precedence.
 - API key/base URL can be injected by environment variables:
   - `SHARP_<PROVIDER_ID>_API_KEY`, `SHARP_<PROVIDER_ID>_BASE_URL`
   - `<PROVIDER_ID>_API_KEY`, `<PROVIDER_ID>_BASE_URL`
@@ -104,7 +112,8 @@ dotnet run --project Sharp.Cli -- repl
 
 Implemented in this phase:
 
-- Provider abstraction and streaming adapters for OpenAI/Anthropic.
+- Provider abstraction and streaming adapters for OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages.
+- Cross-provider handoff transforms for message replay (orphan tool-result backfill, tool-call ID normalization, unsigned thinking downgrade).
 - Provider creation registry (`LlmProviderFactory.Register/Unregister`).
 - Session-driven loop (`AgentSession` + `AgentLoop` + `ToolRuntime`).
 - Session control surface (`ContinueAsync`, `Steer`, `FollowUp`, `Abort`, `WaitForIdleAsync`).

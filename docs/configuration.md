@@ -9,13 +9,31 @@ Configuration is library-oriented in this phase.
 - `defaultModel`: `<provider>/<model>`.
 - `providers[]`:
   - `id`
-  - `api` (`openai-completions` or `anthropic-messages`)
+  - `api` (`openai-completions`, `openai-responses`, or `anthropic-messages`)
   - `apiKey`
   - `baseUrl`
   - `models[]`:
     - `id`
     - `contextWindow`
     - `maxOutputTokens`
+    - `compat` (optional, `openai-completions` only):
+      - `supportsStore` (default inferred from provider/baseUrl)
+      - `supportsDeveloperRole` (default inferred from provider/baseUrl)
+      - `supportsReasoningEffort` (default inferred from provider/baseUrl)
+      - `supportsUsageInStreaming` (default `true`)
+      - `supportsStrictMode` (default `true`)
+      - `requiresToolResultName` (default `false`)
+      - `requiresAssistantAfterToolResult` (default `false`)
+      - `requiresMistralToolIds` (default `false`)
+      - `requiresThinkingAsText` (default `false`)
+      - `maxTokensField` (`max_tokens` or `max_completion_tokens`, default inferred from provider/baseUrl)
+      - `thinkingFormat` (`openai`, `zai`, or `qwen`, default inferred from provider/baseUrl)
+      - `openRouterRouting` (optional routing object: `only[]`, `order[]`)
+      - `vercelGatewayRouting` (optional routing object: `only[]`, `order[]`)
+
+When `compat` is not set, `openai-completions` now applies URL/provider-based defaults for known endpoints (for example, Mistral-specific tool-id/name/thinking behavior).  
+When `compat` is partially set, explicit fields override inferred defaults.
+`openRouterRouting` is only applied when `baseUrl` points to OpenRouter; `vercelGatewayRouting` is only applied when `baseUrl` points to Vercel AI Gateway.
 
 See `/Users/deepwind/repo/SharpAgent/config.example.json`.
 

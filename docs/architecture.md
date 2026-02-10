@@ -13,6 +13,7 @@ Responsibilities:
 - Streaming event model for provider adapters.
 - Provider adapters:
   - OpenAI Chat Completions (`OpenAiLlmProvider`)
+  - OpenAI Responses (`OpenAiResponsesLlmProvider`)
   - Anthropic Messages (`AnthropicLlmProvider`)
 
 Core interfaces:
@@ -60,7 +61,8 @@ graph TD
     Session --> Loop["AgentLoop"]
     Loop --> Runtime["ToolRuntime"]
     Loop --> Provider["ILlmProvider"]
-    Provider --> OpenAI["OpenAiLlmProvider"]
+    Provider --> OpenAICompletions["OpenAiLlmProvider"]
+    Provider --> OpenAIResponses["OpenAiResponsesLlmProvider"]
     Provider --> Anthropic["AnthropicLlmProvider"]
     Session --> Store["SessionManager JSONL Tree"]
 ```

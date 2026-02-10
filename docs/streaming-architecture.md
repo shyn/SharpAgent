@@ -11,7 +11,13 @@ Streaming is modeled in two layers.
 - tool use start/args delta/end
 - completed/error
 
-Provider adapters (OpenAI/Anthropic) normalize protocol-specific SSE into this shared event model.
+Provider adapters (OpenAI Chat Completions, OpenAI Responses, Anthropic) normalize protocol-specific SSE into this shared event model.
+
+Before provider requests are serialized, message history can be normalized for cross-provider handoff:
+
+- backfill orphan tool calls with synthetic tool results (`No result provided`)
+- normalize tool call IDs for provider-specific constraints
+- downgrade unsigned `thinking` blocks to text for providers that cannot replay signatures
 
 ## 2) Agent Layer (`Sharp.Core`)
 
