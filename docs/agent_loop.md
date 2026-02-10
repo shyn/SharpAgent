@@ -1,28 +1,37 @@
-# Agent Loop & Message Flow
+# Agent Loop
 
-SharpAgent uses a **ReAct (Reasoning + Acting)** pattern to solve problems.
+Sharp.Core uses a session-driven ReAct loop.
 
-## The Execution Loop
+## Runtime Entry
 
-When `RunStreamingAsync` is called, the following steps occur:
+- `AgentSession.PromptAsync(...)` is the entrypoint.
+- A user message is persisted to `SessionManager` first.
+- `AgentLoop` then iterates until completion or max turns.
 
-1.  **Initialization**: A conversation history is started with a `System` message (the persona) and a `User` message (the goal).
-2.  **LLM Call**: The current history and available tool definitions are sent to the `ILlmClient`.
-3.  **Streaming Response**:
-    - **Thinking**: If the model supports it (like Claude), the agent streams its internal "thoughts".
-    - **Text**: The agent's verbal response is streamed to the user.
-    - **Tool Calls**: If the LLM determines a tool is needed, it returns one or more `ToolCall` requests.
-4.  **Action**: If tool calls were received:
-    - The agent executes the requested tools locally.
-    - The results (success or error) are added to the conversation history as `Tool` messages.
-    - The loop returns to Step 2 to let the LLM analyze the results.
-5.  **Completion**: If the LLM returns text without any tool calls, the agent assumes the task is finished and yields a completion event.
+## Turn Sequence
 
-## Message Types
-- **System**: Defines the agent's behavior and constraints.
-- **User**: The task or subsequent instructions from the human.
-- **Assistant**: The LLM's responses (including thinking and tool calls).
-- **Tool**: The output from a tool execution.
+1. Build `LlmRequest` from:
+   - model descriptor
+   - system prompt
+   - rebuilt branch context (`SessionManager.RebuildContext()`)
+   - tool definitions (`ToolRuntime.ToToolDefinitions()`)
+2. Stream provider events (`ILlmProvider.StreamAsync`).
+3. Assemble assistant message (`text` / `thinking` / `tool_call` blocks).
+4. Persist assistant message.
+5. If there are tool calls:
+   - execute each call through `ToolRuntime`
+   - emit tool execution partial updates when available
+   - check steering queue after each tool result
+   - persist tool result message
+   - continue to next turn
+6. If there are no tool calls:
+   - check follow-up queue
+   - emit `AgentCompletedEvent`
+   - stop.
 
-## Iteration Limit
-To prevent "infinite loops" where an agent gets stuck or repeats actions, a `maxIterations` (default 20) is enforced.
+## Safety Boundaries
+
+- `MaxTurns` prevents infinite loops.
+- Tool errors are converted into tool-result messages with `IsError=true`.
+- Conversation reconstruction is deterministic because branch context comes from JSONL entries.
+- `AgentSession` supports `ContinueAsync`, `Steer(...)`, `FollowUp(...)`, `Abort()`, and `WaitForIdleAsync()`.

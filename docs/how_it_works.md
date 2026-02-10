@@ -1,25 +1,31 @@
-# How SharpAgent Works
+# How It Works
 
-SharpAgent is a powerful AI agent framework built with .NET 10. It implements a standard **Reasoning-Act (ReAct)** loop, allowing an LLM to use various tools to accomplish complex tasks.
+SharpAgent currently targets a **headless library runtime**.
 
-## Table of Contents
-1. [Architecture Overview](architecture.md)
-2. [Agent Loop & Message Flow](agent_loop.md)
-3. [Tool System](tools.md)
-4. [Configuration & Extensibility](configuration.md)
+## Layers
 
-## Core Philosophy
-- **Modular**: Core logic is decoupled from UI and LLM providers.
-- **Async & Streaming**: Designed for real-time interaction with streaming thought and text.
-- **Type-Safe**: Leverages C# 10+ features for robust and maintainable code.
+1. `Sharp.AI`
+   - Provider adapters
+   - Message/content abstractions
+   - Stream event contracts
 
-## Quick Start for Developers
-The core entry point for the agent logic is the `Agent` class in `SharpAgent.Core`. It coordinates between the `ILlmClient` and various `ITool` implementations.
+2. `Sharp.Core`
+   - Session lifecycle (`AgentSession`)
+   - Agent loop (`AgentLoop`)
+   - Tool execution (`ToolRuntime`)
+   - JSONL tree sessions (`SessionManager`)
 
-```csharp
-var agent = new Agent(llmClient, tools);
-await foreach (var evt in agent.RunStreamingAsync("Find all .cs files in the repo"))
-{
-    // Handle events (thinking, text delta, tool calls, etc.)
-}
-```
+3. `Sharp.Core.Tests`
+   - Unit + integration validation
+
+## Core Principle
+
+Provider transport concerns live in `Sharp.AI`; orchestration and persistence live in `Sharp.Core`.
+
+This keeps agent behavior testable without coupling loop logic to wire protocols.
+
+## Current Non-Goals
+
+- No TUI/Web/Desktop host.
+- No extension runtime.
+- No compaction pipeline yet.

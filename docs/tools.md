@@ -1,37 +1,46 @@
 # Tool System
 
-Tools grant SharpAgent the ability to interact with the real world.
+Tools are runtime capabilities executed by `ToolRuntime`.
 
-## Implementing ITool
-
-Every tool must implement the `ITool` interface:
+## Interface
 
 ```csharp
-public interface ITool
+public interface IAgentTool
 {
     string Name { get; }
     string Description { get; }
-    object ParametersSchema { get; }
-    Task<string> ExecuteAsync(string input, CancellationToken ct = default);
+    JsonElement ParametersSchema { get; }
+    Task<ToolInvocationResult> ExecuteAsync(
+        JsonElement arguments,
+        ToolExecutionContext context,
+        IProgress<ToolInvocationResult>? progress = null,
+        CancellationToken ct = default);
 }
 ```
 
-- **`Name`**: Unique identifier (e.g., `read_file`).
-- **`Description`**: Instructs the LLM on when and how to use the tool.
-- **`ParametersSchema`**: A JSON Schema object explaining the expected arguments.
-- **`ExecuteAsync`**: The logic that runs on the user's machine.
+## Result Model
+
+`ToolInvocationResult` is structured:
+
+- `IsError`
+- `Content` (`ContentBlock[]`)
+- optional `Details` (`JsonElement`)
+
+The agent converts this into `tool_result` message blocks for the next LLM turn.
 
 ## Built-in Tools
 
-| Tool | Purpose |
-| :--- | :--- |
-| `BashTool` | Executes arbitrary shell commands. |
-| `EditFileTool` | Modifies file content using search/replace patterns. |
-| `ReadFileTool` | Reads the content of a specific file. |
-| `ListFilesTool` | Lists files in a directory. |
-| `GrepTool` | Searches for patterns within files. |
-| `GlobTool`| Finds files using glob patterns. |
-| `CalculatorTool` | Performs mathematical calculations. |
+- `read`: text/image read with offset/limit and truncation.
+- `write`: file write with parent directory creation.
+- `edit`: unique text replacement with diff metadata.
+- `bash`: shell execution with timeout and output truncation.
+- `grep`: regex search in text files.
+- `find`: glob-style file matching.
+- `ls`: directory listing.
 
-## Safety
-By default, the agent has the same permissions as the user running the process. Using `BashTool` or `EditFileTool` should be done with caution in untrusted environments.
+## Design Notes
+
+- All tools resolve relative paths against session working directory.
+- Write-oriented tools enforce workspace boundary by default.
+- Tool contract is transport-neutral and independent from provider wire format.
+- Detailed tool metadata is preserved for future host UIs/log pipelines.

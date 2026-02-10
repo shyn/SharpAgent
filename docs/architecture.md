@@ -1,39 +1,77 @@
 # Architecture Overview
 
-SharpAgent is structured as a collection of .NET projects, each with a specific responsibility.
+SharpAgent is split into two runtime libraries plus tests.
 
-## Component Breakdown
+## Components
 
-### SharpAgent.Core
-The heart of the system. It contains:
-- **`Agent`**: The main execution loop controller.
-- **`ILlmClient`**: An abstraction for LLM providers. Currently supports:
-    - `OpenAiClient`: Integration with OpenAI API (GPT-4o, etc.).
-    - `AnthropicClient`: Integration with Anthropic API (Claude 3.5 Sonnet, etc.), supporting native "thinking" blocks.
-- **`ITool`**: The interface for all agent capabilities.
-- **Configuration**: Strongly typed configuration models (`AgentConfig`) and service.
+### 1. `Sharp.AI`
 
-### SharpAgent.Console
-A command-line interface for interacting with the agent. It demonstrate how to consume the `Core` library in a terminal environment, supporting ANSI colors and interactive prompts.
+Responsibilities:
 
-### SharpAgent.WinForms
-A modern Windows Forms application providing a rich chat interface. Features include:
-- Streaming message bubbles.
-- Collapsible tool call cards.
-- Dark mode/Modern aesthetics.
-- Real-time "thinking" visualization.
+- Unified model/message abstractions.
+- Structured content blocks (`text`, `image`, `thinking`, `tool_call`, `tool_result`).
+- Streaming event model for provider adapters.
+- Provider adapters:
+  - OpenAI Chat Completions (`OpenAiLlmProvider`)
+  - Anthropic Messages (`AnthropicLlmProvider`)
 
-### SharpAgent.Api
-A web API layer (likely used by the web frontend) that wraps the agent logic into HTTP endpoints.
+Core interfaces:
 
-## Relationship Diagram
+- `ILlmProvider`
+- `LlmRequest`
+- `LlmStreamEvent`
+- `ToolDefinition`
+- `LlmMessage`
+
+### 2. `Sharp.Core`
+
+Responsibilities:
+
+- Session-driven orchestration (`AgentSession`).
+- Multi-turn agent loop with tool execution (`AgentLoop`).
+- Session control operations (`ContinueAsync`, steering/follow-up queue, abort/wait idle).
+- Tool runtime dispatch (`ToolRuntime`).
+- Tree-based JSONL persistence (`SessionManager`).
+- Built-in coding tools: `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`.
+- Configuration utilities (`AgentConfigurationService`).
+
+Core interfaces/classes:
+
+- `IAgentTool`
+- `ToolInvocationResult`
+- `AgentEvent`
+- `SessionManager`
+
+### 3. `Sharp.Core.Tests`
+
+Responsibilities:
+
+- Unit tests for tool/runtime/config/session behavior.
+- Provider mapping and streaming assembly tests.
+- End-to-end library integration tests (`session + loop + tool call`).
+
+## High-Level Flow
 
 ```mermaid
 graph TD
-    UI[SharpAgent.WinForms / Console] --> Core[SharpAgent.Core]
-    Core --> LLM[ILlmClient]
-    Core --> Tools[ITool implementations]
-    LLM --> OpenAI[OpenAI API]
-    LLM --> Anthropic[Anthropic API]
-    Tools --> OS[Operating System / Filesystem]
+    App["Library Consumer"] --> Session["AgentSession"]
+    Session --> Loop["AgentLoop"]
+    Loop --> Runtime["ToolRuntime"]
+    Loop --> Provider["ILlmProvider"]
+    Provider --> OpenAI["OpenAiLlmProvider"]
+    Provider --> Anthropic["AnthropicLlmProvider"]
+    Session --> Store["SessionManager JSONL Tree"]
 ```
+
+## Session Storage
+
+- One `.jsonl` file per session.
+- First line: `session` header.
+- Subsequent lines: entries with `id`, `parentId`, `type`, `payload`.
+- Context rebuild supports `message`, `custom_message`, `branch_summary`, and `compaction`.
+
+## Non-Goals in This Phase
+
+- No interactive shell, no web API, no desktop UI.
+- No extension/plugin runtime.
+- No UI-level compaction workflow yet (entries and context rebuild hooks exist in core storage).

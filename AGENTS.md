@@ -1,176 +1,95 @@
-# SharpAgent 项目目录结构
+# SharpAgent 项目说明（库优先阶段）
 
-```
+## 目录结构
+
+```text
 .
 ├── AGENTS.md
+├── HANDOFF.md
+├── README.md
 ├── config.example.json
 ├── docs/
-│   ├── agent_loop.md
-│   ├── architecture.md
-│   ├── configuration.md
-│   ├── how_it_works.md
-│   ├── skills.md
-│   ├── skills_refs.md
-│   ├── streaming-architecture.md
-│   └── tools.md
-├── LICENSE
-├── README.md
-├── Share.md
-├── SharpAgent.Api/
-│   ├── appsettings.Development.json
-│   ├── appsettings.json
-│   ├── Models/
-│   │   ├── ChatModels.cs
-│   │   └── UserChatModels.cs
-│   ├── Program.cs
-│   ├── Properties/
-│   │   └── launchSettings.json
-│   ├── Services/
-│   │   ├── UserAgentConfig.cs
-│   │   ├── UserAgentService.cs
-│   │   ├── WeChatConfig.cs
-│   │   └── WeChatWorkClient.cs
-│   ├── SharpAgent.Api.csproj
-│   ├── SharpAgent.Api.http
-│   └── user_workspaces/
-│       ├── 12755/
-│       └── 14573/
-├── SharpAgent.Console/
-│   ├── HistoryTextPrompt.cs
-│   ├── Program.cs
-│   ├── SharpAgent.Console.csproj
-│   └── ToolFormatters.cs
-├── SharpAgent.Core/
-│   ├── Agent.cs
-│   ├── AgentOptions.cs
-│   ├── AgentsMdLoader.cs
-│   ├── AnthropicClient.cs
-│   ├── Configuration/
-│   │   ├── AgentConfig.cs
-│   │   └── ConfigurationService.cs
-│   ├── IAgent.cs
-│   ├── ILlmClient.cs
-│   ├── ITool.cs
-│   ├── Message.cs
-│   ├── OpenAiClient.cs
-│   ├── Search/
-│   │   ├── DuckDuckGoSearchClient.cs
-│   │   └── ISearchClient.cs
-│   ├── Sessions/
-│   │   ├── ChatHistoryService.cs
-│   │   ├── ISession.cs
-│   │   ├── ISessionStore.cs
-│   │   ├── JsonSessionStore.cs
-│   │   ├── Session.cs
-│   │   └── TimestampedMessage.cs
-│   ├── SharpAgent.Core.csproj
-│   ├── Skills/
-│   │   ├── SkillMetadata.cs
-│   │   └── SkillsLoader.cs
-│   ├── Streaming/
-│   │   ├── AgentEventEnvelope.cs
-│   │   ├── AgentEvents.cs
-│   │   ├── AgentStreamEvents.cs
-│   │   ├── EventStream.cs
-│   │   ├── IEventStore.cs
-│   │   ├── IEventStream.cs
-│   │   ├── NdjsonEventStore.cs
-│   │   └── SubscriptionOptions.cs
-│   └── Tools/
-│       ├── BashTool.cs
-│       ├── CalculatorTool.cs
-│       ├── EditFileTool.cs
-│       ├── GlobTool.cs
-│       ├── GrepTool.cs
-│       ├── ListFilesTool.cs
-│       ├── ReadFileTool.cs
-│       └── SearchTool.cs
-├── SharpAgent.Core.Tests/
-│   ├── AgentsMdLoaderTests.cs
-│   ├── AgentTests.cs
-│   ├── CalculatorToolTests.cs
-│   ├── DuckDuckGoSearchClientTests.cs
-│   ├── EditFileToolTests.cs
-│   ├── GlobToolTests.cs
-│   ├── GrepToolTests.cs
-│   ├── ListFilesToolTests.cs
-│   ├── ReadFileToolTests.cs
-│   ├── SearchToolTests.cs
-│   ├── SessionTests.cs
-│   ├── SharpAgent.Core.Tests.csproj
-│   └── SkillsLoaderTests.cs
-├── SharpAgent.sln
-├── SharpAgent.WinForms/
-│   ├── ConfigDialog.cs
-│   ├── ConfigDialog.Designer.cs
-│   ├── Controls/
-│   │   ├── ChatBubble.cs
-│   │   ├── ChatPanel.cs
-│   │   ├── ModernButton.cs
-│   │   ├── ModernInputArea.cs
-│   │   ├── RoundedTextBox.cs
-│   │   ├── ThinkingCard.cs
-│   │   └── ToolCallCard.cs
-│   ├── MainForm.cs
-│   ├── MainForm.Designer.cs
-│   ├── MainForm.resx
-│   ├── Program.cs
-│   ├── Resources/
-│   ├── SharpAgent.WinForms.csproj
-│   └── Theme.cs
-└── TODO.md
-
-24 directories, 114 files
+├── Sharp.AI/
+├── Sharp.Cli/
+├── Sharp.Cli.Tests/
+├── Sharp.Core/
+├── Sharp.Core.Tests/
+└── SharpAgent.sln
 ```
 
-## 关键项目说明
+## 当前阶段状态
 
-1. **SharpAgent.Core** - 核心库，包含代理循环、LLM 客户端接口、工具抽象和消息类型
-2. **SharpAgent.Core.Tests** - xUnit 测试，使用 NSubstitute 进行模拟
-3. **SharpAgent.Console** - CLI 应用程序入口点
-4. **SharpAgent.WinForms** - Windows Forms GUI 应用程序
-5. **SharpAgent.Api** - Web API 服务，支持多用户
-6. **docs/** - 项目文档和架构说明
+1. 已完成从多入口应用到库优先架构的破坏性重构。
+2. 已移除 `SharpAgent.Console`、`SharpAgent.Api`、`SharpAgent.WinForms`。
+3. 解决方案当前由 `Sharp.AI`、`Sharp.Core`、`Sharp.Cli`、对应测试项目组成。
+4. `Sharp.Cli` 已作为薄宿主用于端到端验证（`run/repl/models/config`）；`TUI` 仍未实现。
+5. 插件系统核心能力已具备：发现/装载、session before/after 生命周期、显式 reload 生命周期。
+6. 配置系统已支持 provider 级环境变量回退（无需在 config 写明文 API key）。
+
+## 核心职责分层
+
+1. `Sharp.AI`
+   - 统一消息与内容块模型。
+   - 统一 provider streaming 事件模型。
+   - OpenAI / Anthropic 适配器。
+   - 关键兼容增强：
+     - tool/thinking signature 透传（Anthropic 工具回合）。
+     - data-only SSE 兼容解析。
+2. `Sharp.Core`
+   - 会话驱动循环：`AgentSession`、`AgentLoop`、`ToolRuntime`。
+   - JSONL 树会话存储：`SessionManager`（`id` + `parentId`）。
+   - 工具接口：`IAgentTool`（结构化参数与结构化结果）。
+   - 扩展运行时：`ExtensionRuntime` + `ExtensionLoader` + 生命周期事件。
+3. `Sharp.Cli`
+   - Thin host：交互输入、事件渲染、配置与模型管理命令。
+   - 约束：业务逻辑尽量留在 `Sharp.Core`，CLI 仅编排与展示。
+4. `Sharp.Core.Tests`
+   - 单测 + 集成测试。
+   - 覆盖 loop、session、tool、provider mapping。
 
 ## 主要接口
 
-- `IAgent` - 代理接口
-- `ILlmClient` - LLM 客户端接口
-- `ITool` - 工具接口
+- `ILlmProvider`（`/Users/deepwind/repo/SharpAgent/Sharp.AI/ILlmProvider.cs`）
+- `AgentSession`（`/Users/deepwind/repo/SharpAgent/Sharp.Core/AgentSession.cs`）
+- `SessionManager`（`/Users/deepwind/repo/SharpAgent/Sharp.Core/Sessions/SessionManager.cs`）
+- `IAgentTool`（`/Users/deepwind/repo/SharpAgent/Sharp.Core/IAgentTool.cs`）
 
-## 技能支持
+## 会话模型
 
-技能 (Skills) 位于 `SharpAgent.Core/Skills/` 目录中:
-- `SkillMetadata` - 技能元数据模型
-- `SkillsLoader` - 技能发现和解析器
+1. 会话文件为 JSONL。
+2. 第一行是 `session` header。
+3. 后续 entry 带 `id`、`parentId`、`type`、`payload`。
+4. `SessionManager.RebuildContext()` 按当前叶子分支恢复上下文。
 
-技能搜索路径（按优先级）:
-1. `.agents/skills/**` - 项目本地（递归）
-2. `.claude/skills/*` - Claude Code 项目本地
-3. `~/.claude/skills/*` - Claude Code 用户
-4. `~/.codex/skills/**` - Codex CLI（递归）
-5. `~/.config/agents/skills/*` - Agent Skills 标准
+## 工具模型
 
-Agent 使用 `read_file` 工具读取 SKILL.md 文件加载技能指令。
+1. 工具集合收敛为 `read`、`write`、`edit`、`bash`。
+2. `ToolInvocationResult` 统一包含 `isError`、`content`、`details`。
+3. `edit` 需要唯一匹配，返回变更细节（包括 diff 元数据）。
 
-## 工具位置
+## 构建与测试
 
-所有工具都位于 `SharpAgent.Core/Tools/` 目录中，并实现 `ITool` 接口。
+- Build: `dotnet build SharpAgent.sln -m:1 -nr:false -v minimal`
+- Test: `dotnet test SharpAgent.sln -m:1 -nr:false -v minimal`
+- Single test: `dotnet test --filter "FullyQualifiedName~ClassName.MethodName"`
 
-## 构建和测试命令
+## 已知约束
 
-- **构建**: `dotnet build`
-- **全部测试**: `dotnet test`
-- **单个测试**: `dotnet test --filter "FullyQualifiedName~ClassName.MethodName"`
-- **运行控制台**: `dotnet run --project SharpAgent.Console`
+1. 当前环境可能出现 `NU1900` 警告（NuGet vulnerability source 不可达），不阻断 build/test。
+2. 部分第三方“Anthropic 兼容”网关并不严格遵循 Anthropic Messages SSE 协议，可能返回空流/非标准事件。
+   - 当前行为：会明确返回 `no parseable events` 错误，而不是静默 `[result:end]`。
+3. 插件装载仍基于 `Assembly.LoadFrom`，尚未上 `AssemblyLoadContext` 隔离与可卸载。
+4. reload 后 provider factory 目前是覆盖注册模型，尚未实现扩展移除后的回滚策略。
 
-## 代码风格
+## 下一会话优先事项
 
-- .NET 10, C# 启用可空引用类型和隐式 using
-- 文件作用域命名空间 (`namespace X;`)
-- 接口前缀为 `I` (如 `ITool`, `IAgent`)
-- 私有字段使用 `_camelCase`
-- 异步方法后缀为 `Async` 并接受 `CancellationToken ct = default`
-- 不可变数据类型使用记录类型 (如 `Message`, `LlmResponse`)
-- 测试使用 xUnit `[Fact]` 属性，命名方式为 `ClassName_Method_ExpectedBehavior`
-- 测试中使用 NSubstitute 进行模拟
+1. Provider 兼容层：为非标准 Anthropic 网关补专用 adapter 或协议降级策略（避免空流）。
+2. 插件隔离装载：`AssemblyLoadContext` + unload 路径 + reload 回收验证。
+3. CLI 结构化输出：JSON/JSONL 事件流模式，便于脚本化与回归测试自动化。
+
+## 编码约定
+
+1. .NET 10，启用 nullable 与 implicit usings。
+2. 文件作用域命名空间。
+3. 异步方法命名以 `Async` 结尾，且带 `CancellationToken`。
+4. 测试框架为 xUnit。
