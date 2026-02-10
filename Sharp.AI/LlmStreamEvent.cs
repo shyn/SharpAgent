@@ -2,6 +2,15 @@ namespace Sharp.AI;
 
 public abstract record LlmStreamEvent;
 
+public enum LlmStopReason
+{
+    Stop,
+    Length,
+    ToolUse,
+    Aborted,
+    Error
+}
+
 public sealed record LlmThinkingStartedEvent : LlmStreamEvent;
 
 public sealed record LlmThinkingDeltaEvent(string Delta) : LlmStreamEvent;
@@ -21,7 +30,8 @@ public sealed record LlmCompletedEvent(
     string? FullThinking,
     IReadOnlyList<ToolCall> ToolCalls,
     Usage? Usage = null,
-    string? ThinkingSignature = null) : LlmStreamEvent;
+    string? ThinkingSignature = null,
+    LlmStopReason StopReason = LlmStopReason.Stop) : LlmStreamEvent;
 
 public sealed record LlmErrorEvent(
     string Message,

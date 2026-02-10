@@ -5,4 +5,5 @@ public sealed record ModelDescriptor(
     string ModelId,
     ProviderApiKind ApiKind,
     int? ContextWindow = null,
-    int? MaxOutputTokens = null);
+    int? MaxOutputTokens = null,
+    OpenAiCompletionsCompat? OpenAiCompletionsCompat = null);

@@ -37,12 +37,15 @@ public sealed class AnthropicLlmProvider : ILlmProvider
         }
 
         var thinkingBudget = ResolveThinkingBudget(request.ThinkingLevel, request.ThinkingBudgets);
+        var normalizedMessages = MessageTransforms.EnsureToolResultContinuity(request.Messages);
+        normalizedMessages = MessageTransforms.NormalizeToolCallIds(normalizedMessages, ToolCallIdNormalizer.Normalize);
+        normalizedMessages = MessageTransforms.ConvertUnsignedThinkingToText(normalizedMessages);
         var payload = new AnthropicRequest
         {
             Model = request.Model.ModelId,
             MaxTokens = request.MaxOutputTokens ?? request.Model.MaxOutputTokens ?? 8192,
             System = request.SystemPrompt,
-            Messages = request.Messages
+            Messages = normalizedMessages
                 .Where(m => m.Role != LlmMessageRole.System)
                 .Select(ToAnthropicMessage)
                 .ToList(),
@@ -173,7 +176,8 @@ public sealed class AnthropicLlmProvider : ILlmProvider
                     .Select(x => new ToolCall(x.Id, x.Name, x.ArgumentsBuilder.ToString(), x.Signature))
                     .ToList(),
                 state.ToUsage(),
-                state.ThinkingSignatureBuilder.Length == 0 ? null : state.ThinkingSignatureBuilder.ToString());
+                state.ThinkingSignatureBuilder.Length == 0 ? null : state.ThinkingSignatureBuilder.ToString(),
+                state.StopReason);
             Debug(
                 $"response.completed text_chars={state.TextBuilder.Length} thinking_chars={state.ThinkingBuilder.Length} tool_calls={state.ToolCalls.Count}");
         }
@@ -401,6 +405,8 @@ public sealed class AnthropicLlmProvider : ILlmProvider
             {
                 var delta = JsonSerializer.Deserialize<MessageDeltaPayload>(data, JsonDefaults.Options);
                 state.UpdateUsage(delta?.Usage);
+                if (!string.IsNullOrWhiteSpace(delta?.Delta?.StopReason))
+                    state.StopReason = MapStopReason(delta.Delta.StopReason!);
                 yield break;
             }
             case "content_block_start":
@@ -581,6 +587,17 @@ public sealed class AnthropicLlmProvider : ILlmProvider
             InputSchema = tool.ParametersSchema
         };
 
+    private static LlmStopReason MapStopReason(string stopReason)
+    {
+        return stopReason switch
+        {
+            "end_turn" => LlmStopReason.Stop,
+            "max_tokens" => LlmStopReason.Length,
+            "tool_use" => LlmStopReason.ToolUse,
+            _ => LlmStopReason.Error
+        };
+    }
+
     private sealed class StreamState
     {
         public StringBuilder TextBuilder { get; } = new();
@@ -589,6 +606,7 @@ public sealed class AnthropicLlmProvider : ILlmProvider
         public Dictionary<int, MutableToolCall> ToolCalls { get; } = new();
         public HashSet<string> CompletedToolIds { get; } = new(StringComparer.Ordinal);
         public string? CurrentContentType { get; set; }
+        public LlmStopReason StopReason { get; set; } = LlmStopReason.Stop;
 
         public int InputTokens { get; private set; }
         public int OutputTokens { get; private set; }
@@ -679,7 +697,13 @@ public sealed class AnthropicLlmProvider : ILlmProvider
 
     private sealed class MessageDeltaPayload
     {
+        public MessageDelta? Delta { get; init; }
         public AnthropicUsage? Usage { get; init; }
+    }
+
+    private sealed class MessageDelta
+    {
+        public string? StopReason { get; init; }
     }
 
     private sealed class AnthropicUsage

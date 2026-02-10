@@ -196,7 +196,10 @@ public sealed class AgentConfigurationService
                 ModelId: model.Id,
                 ApiKind: AgentConfig.ToProviderApiKind(apiFormat),
                 ContextWindow: model.ContextWindow,
-                MaxOutputTokens: model.MaxOutputTokens),
+                MaxOutputTokens: model.MaxOutputTokens,
+                OpenAiCompletionsCompat: apiFormat == ModelApiFormat.OpenAiCompletions
+                    ? OpenAiCompatResolver.ResolveCompletionsCompat(provider.Id, baseUrl, model.Compat)
+                    : null),
             ApiKey = apiKey,
             BaseUrl = baseUrl,
             WorkingDirectory = workingDirectory ?? Directory.GetCurrentDirectory(),

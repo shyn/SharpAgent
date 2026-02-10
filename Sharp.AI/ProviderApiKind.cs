@@ -3,6 +3,7 @@ namespace Sharp.AI;
 public enum ProviderApiKind
 {
     OpenAiChatCompletions,
+    OpenAiResponses,
     AnthropicMessages
 }
 

@@ -13,6 +13,11 @@ public static class LlmProviderFactory
             overwrite: true);
 
         Register(
+            ProviderApiKind.OpenAiResponses,
+            context => CreateOpenAiResponses(CreateHttpClient(context.BaseUrl, context.Handler), context.ApiKey),
+            overwrite: true);
+
+        Register(
             ProviderApiKind.AnthropicMessages,
             context => CreateAnthropic(CreateHttpClient(context.BaseUrl, context.Handler), context.ApiKey),
             overwrite: true);
@@ -88,6 +93,12 @@ public static class LlmProviderFactory
     {
         httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
         return new Providers.OpenAiLlmProvider(httpClient);
+    }
+
+    private static ILlmProvider CreateOpenAiResponses(HttpClient httpClient, string apiKey)
+    {
+        httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+        return new Providers.OpenAiResponsesLlmProvider(httpClient);
     }
 
     private static ILlmProvider CreateAnthropic(HttpClient httpClient, string apiKey)

@@ -8,6 +8,10 @@ namespace Sharp.AI.Providers;
 
 public sealed class OpenAiLlmProvider : ILlmProvider
 {
+    private const string ThinkingFormatOpenAi = "openai";
+    private const string ThinkingFormatZai = "zai";
+    private const string ThinkingFormatQwen = "qwen";
+
     private readonly HttpClient _httpClient;
     private readonly ILogger<OpenAiLlmProvider> _logger;
 
@@ -36,14 +40,72 @@ public sealed class OpenAiLlmProvider : ILlmProvider
             yield break;
         }
 
+        var compat = request.Model.OpenAiCompletionsCompat ?? new OpenAiCompletionsCompat();
+        var baseUrl = _httpClient.BaseAddress?.ToString() ?? string.Empty;
+        var payloadCompat = ResolvePayloadCompat(request.Model.ProviderId, baseUrl, compat);
+        var normalizedMessages = MessageTransforms.EnsureToolResultContinuity(request.Messages);
+        if (compat.RequiresAssistantAfterToolResult)
+            normalizedMessages = MessageTransforms.EnsureAssistantAfterToolResult(normalizedMessages);
+        if (compat.RequiresMistralToolIds)
+        {
+            normalizedMessages = MessageTransforms.NormalizeToolCallIds(
+                normalizedMessages,
+                ToolCallIdNormalizer.NormalizeMistral);
+        }
+        else if (ShouldNormalizeOpenAiToolCallIds(request.Model.ProviderId, baseUrl))
+        {
+            normalizedMessages = MessageTransforms.NormalizeToolCallIds(
+                normalizedMessages,
+                ToolCallIdNormalizer.NormalizeOpenAi);
+        }
+
+        var useDeveloperRole = request.ThinkingLevel != ThinkingLevel.Off && payloadCompat.SupportsDeveloperRole;
+        var reasoningEffort = ResolveReasoningEffort(request.ThinkingLevel);
+        var messages = new List<OpenAiMessage>();
+        if (!string.IsNullOrWhiteSpace(request.SystemPrompt))
+        {
+            messages.Add(new OpenAiMessage
+            {
+                Role = useDeveloperRole ? "developer" : "system",
+                Content = request.SystemPrompt
+            });
+        }
+
+        messages.AddRange(normalizedMessages.Select(message => ToOpenAiMessage(message, compat, useDeveloperRole)));
+        var openRouterRouting = IsOpenRouterBaseUrl(baseUrl)
+            ? NormalizeRouting(payloadCompat.OpenRouterRouting)
+            : null;
+        var vercelRouting = IsVercelGatewayBaseUrl(baseUrl)
+            ? NormalizeRouting(payloadCompat.VercelGatewayRouting)
+            : null;
+
         var payload = new OpenAiRequest
         {
             Model = request.Model.ModelId,
-            Messages = request.Messages.Select(ToOpenAiMessage).ToList(),
-            Tools = request.Tools.Count > 0 ? request.Tools.Select(ToOpenAiTool).ToList() : null,
+            Messages = messages,
+            Tools = request.Tools.Count > 0 ? request.Tools.Select(tool => ToOpenAiTool(tool, compat)).ToList() : null,
             Stream = true,
-            StreamOptions = new OpenAiStreamOptions { IncludeUsage = true },
-            MaxTokens = request.MaxOutputTokens ?? request.Model.MaxOutputTokens
+            StreamOptions = compat.SupportsUsageInStreaming ? new OpenAiStreamOptions { IncludeUsage = true } : null,
+            Store = payloadCompat.SupportsStore ? false : null,
+            MaxTokens = compat.MaxTokensField == OpenAiMaxTokensField.MaxTokens
+                ? request.MaxOutputTokens ?? request.Model.MaxOutputTokens
+                : null,
+            MaxCompletionTokens = compat.MaxTokensField == OpenAiMaxTokensField.MaxCompletionTokens
+                ? request.MaxOutputTokens ?? request.Model.MaxOutputTokens
+                : null,
+            ReasoningEffort = payloadCompat.ThinkingFormat == ThinkingFormatOpenAi && payloadCompat.SupportsReasoningEffort
+                ? reasoningEffort
+                : null,
+            Thinking = payloadCompat.ThinkingFormat == ThinkingFormatZai
+                ? new OpenAiThinking { Type = reasoningEffort == null ? "disabled" : "enabled" }
+                : null,
+            EnableThinking = payloadCompat.ThinkingFormat == ThinkingFormatQwen
+                ? reasoningEffort != null
+                : null,
+            Provider = openRouterRouting,
+            ProviderOptions = vercelRouting == null
+                ? null
+                : new OpenAiProviderOptions { Gateway = vercelRouting }
         };
 
         var payloadElement = JsonSerializer.SerializeToElement(payload, JsonDefaults.Options);
@@ -129,7 +191,7 @@ public sealed class OpenAiLlmProvider : ILlmProvider
             await using var stream = await safeResponse.Content.ReadAsStreamAsync(ct);
             using var reader = new StreamReader(stream);
 
-            var state = new StreamState();
+            var state = new StreamState(compat.RequiresMistralToolIds);
 
             string? line;
             while ((line = await reader.ReadLineAsync(ct)) != null)
@@ -166,7 +228,8 @@ public sealed class OpenAiLlmProvider : ILlmProvider
                     .OrderBy(x => x.Index)
                     .Select(x => new ToolCall(x.Id, x.Name, x.ArgumentsBuilder.ToString()))
                     .ToList(),
-                state.Usage);
+                state.Usage,
+                StopReason: state.StopReason);
             Debug($"response.completed text_chars={state.TextBuilder.Length} tool_calls={state.ToolCalls.Count}");
         }
     }
@@ -326,7 +389,9 @@ public sealed class OpenAiLlmProvider : ILlmProvider
             {
                 if (!state.ToolCalls.TryGetValue(toolDelta.Index, out var toolState))
                 {
-                    var initialId = ToolCallIdNormalizer.Normalize(toolDelta.Id, toolDelta.Index);
+                    var initialId = state.RequiresMistralToolIds
+                        ? ToolCallIdNormalizer.NormalizeMistral(toolDelta.Id, toolDelta.Index)
+                        : ToolCallIdNormalizer.Normalize(toolDelta.Id, toolDelta.Index);
                     var initialName = toolDelta.Function?.Name ?? string.Empty;
 
                     toolState = new MutableToolCall(toolDelta.Index, initialId)
@@ -348,6 +413,9 @@ public sealed class OpenAiLlmProvider : ILlmProvider
             }
         }
 
+        if (!string.IsNullOrWhiteSpace(choice.FinishReason))
+            state.StopReason = MapStopReason(choice.FinishReason);
+
         if (choice.FinishReason == "tool_calls")
         {
             foreach (var toolState in state.ToolCalls.Values.OrderBy(x => x.Index))
@@ -356,6 +424,17 @@ public sealed class OpenAiLlmProvider : ILlmProvider
                     yield return new LlmToolUseCompletedEvent(toolState.Id);
             }
         }
+    }
+
+    private static LlmStopReason MapStopReason(string finishReason)
+    {
+        return finishReason switch
+        {
+            "stop" => LlmStopReason.Stop,
+            "length" => LlmStopReason.Length,
+            "tool_calls" => LlmStopReason.ToolUse,
+            _ => LlmStopReason.Error
+        };
     }
 
     private static Usage? ToUsage(OpenAiUsage usage)
@@ -371,13 +450,16 @@ public sealed class OpenAiLlmProvider : ILlmProvider
             Cost: new CostBreakdown(0, 0, 0, 0, 0));
     }
 
-    private static OpenAiMessage ToOpenAiMessage(LlmMessage message)
+    private static OpenAiMessage ToOpenAiMessage(
+        LlmMessage message,
+        OpenAiCompletionsCompat compat,
+        bool useDeveloperRoleForSystem)
     {
         return message.Role switch
         {
             LlmMessageRole.System => new OpenAiMessage
             {
-                Role = "system",
+                Role = useDeveloperRoleForSystem ? "developer" : "system",
                 Content = MessageContent.FlattenText(message.Content)
             },
             LlmMessageRole.User => new OpenAiMessage
@@ -385,13 +467,13 @@ public sealed class OpenAiLlmProvider : ILlmProvider
                 Role = "user",
                 Content = MessageContent.FlattenText(message.Content)
             },
-            LlmMessageRole.Tool => BuildToolResultMessage(message),
-            LlmMessageRole.Assistant => BuildAssistantMessage(message),
+            LlmMessageRole.Tool => BuildToolResultMessage(message, compat),
+            LlmMessageRole.Assistant => BuildAssistantMessage(message, compat),
             _ => throw new ArgumentOutOfRangeException(nameof(message.Role), message.Role, "Unsupported message role")
         };
     }
 
-    private static OpenAiMessage BuildToolResultMessage(LlmMessage message)
+    private static OpenAiMessage BuildToolResultMessage(LlmMessage message, OpenAiCompletionsCompat compat)
     {
         var result = message.Content.OfType<ToolResultContentBlock>().FirstOrDefault();
         if (result == null)
@@ -401,13 +483,34 @@ public sealed class OpenAiLlmProvider : ILlmProvider
         {
             Role = "tool",
             ToolCallId = result.ToolCallId,
+            Name = compat.RequiresToolResultName ? result.ToolName : null,
             Content = result.ContentText
         };
     }
 
-    private static OpenAiMessage BuildAssistantMessage(LlmMessage message)
+    private static OpenAiMessage BuildAssistantMessage(LlmMessage message, OpenAiCompletionsCompat compat)
     {
-        var text = message.Content.OfType<TextContentBlock>().Select(x => x.Text).FirstOrDefault();
+        var hasTextBlock = message.Content.OfType<TextContentBlock>().Any();
+        var textParts = new List<string>();
+        foreach (var block in message.Content)
+        {
+            switch (block)
+            {
+                case TextContentBlock textBlock:
+                    if (textBlock.Text.Length > 0)
+                        textParts.Add(textBlock.Text);
+                    break;
+                case ThinkingContentBlock thinking when !string.IsNullOrWhiteSpace(thinking.Text):
+                    textParts.Add(compat.RequiresThinkingAsText
+                        ? $"<thinking>\n{thinking.Text}\n</thinking>"
+                        : thinking.Text);
+                    break;
+            }
+        }
+
+        var text = textParts.Count > 0
+            ? string.Join("\n", textParts)
+            : hasTextBlock ? string.Empty : null;
         var toolCalls = message.Content
             .OfType<ToolCallContentBlock>()
             .Select(call => new OpenAiToolCall
@@ -430,7 +533,7 @@ public sealed class OpenAiLlmProvider : ILlmProvider
         };
     }
 
-    private static OpenAiTool ToOpenAiTool(ToolDefinition tool)
+    private static OpenAiTool ToOpenAiTool(ToolDefinition tool, OpenAiCompletionsCompat compat)
         => new()
         {
             Type = "function",
@@ -438,16 +541,136 @@ public sealed class OpenAiLlmProvider : ILlmProvider
             {
                 Name = tool.Name,
                 Description = tool.Description,
-                Parameters = tool.ParametersSchema
+                Parameters = tool.ParametersSchema,
+                Strict = compat.SupportsStrictMode ? false : null
             }
         };
 
+    private static PayloadCompat ResolvePayloadCompat(
+        string providerId,
+        string baseUrl,
+        OpenAiCompletionsCompat compat)
+    {
+        var detected = DetectPayloadCompat(providerId, baseUrl);
+        var thinkingFormat = NormalizeThinkingFormat(compat.ThinkingFormat) ?? detected.ThinkingFormat;
+
+        return new PayloadCompat
+        {
+            SupportsStore = compat.SupportsStore ?? detected.SupportsStore,
+            SupportsDeveloperRole = compat.SupportsDeveloperRole ?? detected.SupportsDeveloperRole,
+            SupportsReasoningEffort = compat.SupportsReasoningEffort ?? detected.SupportsReasoningEffort,
+            ThinkingFormat = thinkingFormat,
+            OpenRouterRouting = NormalizeRouting(compat.OpenRouterRouting),
+            VercelGatewayRouting = NormalizeRouting(compat.VercelGatewayRouting)
+        };
+    }
+
+    private static PayloadCompat DetectPayloadCompat(string providerId, string baseUrl)
+    {
+        var normalizedProviderId = providerId.Trim().ToLowerInvariant();
+        var isZai = normalizedProviderId == "zai" || ContainsIgnoreCase(baseUrl, "api.z.ai");
+        var isQwen = normalizedProviderId == "qwen" || ContainsIgnoreCase(baseUrl, "dashscope.aliyuncs.com");
+        var isGrok = normalizedProviderId == "xai" || ContainsIgnoreCase(baseUrl, "api.x.ai");
+        var isMistral = normalizedProviderId == "mistral" || ContainsIgnoreCase(baseUrl, "mistral.ai");
+        var isNonStandard = normalizedProviderId is "cerebras" or "xai" or "mistral" or "opencode"
+                            || ContainsIgnoreCase(baseUrl, "cerebras.ai")
+                            || ContainsIgnoreCase(baseUrl, "chutes.ai")
+                            || ContainsIgnoreCase(baseUrl, "deepseek.com")
+                            || ContainsIgnoreCase(baseUrl, "opencode.ai")
+                            || isGrok
+                            || isZai
+                            || isMistral;
+
+        return new PayloadCompat
+        {
+            SupportsStore = !isNonStandard,
+            SupportsDeveloperRole = !isNonStandard,
+            SupportsReasoningEffort = !isGrok && !isZai,
+            ThinkingFormat = isZai
+                ? ThinkingFormatZai
+                : isQwen
+                    ? ThinkingFormatQwen
+                    : ThinkingFormatOpenAi
+        };
+    }
+
+    private static string? ResolveReasoningEffort(ThinkingLevel level)
+    {
+        return level switch
+        {
+            ThinkingLevel.Off => null,
+            ThinkingLevel.Minimal => "minimal",
+            ThinkingLevel.Low => "low",
+            ThinkingLevel.Medium => "medium",
+            ThinkingLevel.High => "high",
+            ThinkingLevel.XHigh => "high",
+            _ => null
+        };
+    }
+
+    private static string? NormalizeThinkingFormat(string? rawValue)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue))
+            return null;
+
+        var normalized = rawValue.Trim().ToLowerInvariant();
+        return normalized is ThinkingFormatOpenAi or ThinkingFormatZai or ThinkingFormatQwen
+            ? normalized
+            : null;
+    }
+
+    private static OpenAiRoutingPreferences? NormalizeRouting(OpenAiRoutingPreferences? routing)
+    {
+        if (routing == null)
+            return null;
+
+        var only = routing.Only?
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Select(item => item.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var order = routing.Order?
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Select(item => item.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        only = only is { Length: > 0 } ? only : null;
+        order = order is { Length: > 0 } ? order : null;
+        if (only == null && order == null)
+            return null;
+
+        return new OpenAiRoutingPreferences(only, order);
+    }
+
+    private static bool IsOpenRouterBaseUrl(string baseUrl)
+        => ContainsIgnoreCase(baseUrl, "openrouter.ai");
+
+    private static bool IsVercelGatewayBaseUrl(string baseUrl)
+        => ContainsIgnoreCase(baseUrl, "ai-gateway.vercel.sh");
+
+    private static bool ContainsIgnoreCase(string text, string token)
+        => text.Contains(token, StringComparison.OrdinalIgnoreCase);
+
+    private static bool ShouldNormalizeOpenAiToolCallIds(string providerId, string baseUrl)
+    {
+        var normalizedProviderId = providerId.Trim().ToLowerInvariant();
+        return normalizedProviderId is "openai" or "openai-codex" or "opencode"
+               || ContainsIgnoreCase(baseUrl, "api.openai.com");
+    }
+
     private sealed class StreamState
     {
+        public StreamState(bool requiresMistralToolIds)
+        {
+            RequiresMistralToolIds = requiresMistralToolIds;
+        }
+
         public StringBuilder TextBuilder { get; } = new();
         public Dictionary<int, MutableToolCall> ToolCalls { get; } = new();
         public HashSet<string> CompletedToolIds { get; } = new(StringComparer.Ordinal);
         public Usage? Usage { get; set; }
+        public LlmStopReason StopReason { get; set; } = LlmStopReason.Stop;
+        public bool RequiresMistralToolIds { get; }
     }
 
     private sealed class MutableToolCall
@@ -471,7 +694,14 @@ public sealed class OpenAiLlmProvider : ILlmProvider
         public List<OpenAiTool>? Tools { get; init; }
         public bool Stream { get; init; }
         public OpenAiStreamOptions? StreamOptions { get; init; }
+        public bool? Store { get; init; }
         public int? MaxTokens { get; init; }
+        public int? MaxCompletionTokens { get; init; }
+        public string? ReasoningEffort { get; init; }
+        public OpenAiThinking? Thinking { get; init; }
+        public bool? EnableThinking { get; init; }
+        public OpenAiRoutingPreferences? Provider { get; init; }
+        public OpenAiProviderOptions? ProviderOptions { get; init; }
     }
 
     private sealed class OpenAiStreamOptions
@@ -479,11 +709,32 @@ public sealed class OpenAiLlmProvider : ILlmProvider
         public bool IncludeUsage { get; init; }
     }
 
+    private sealed class OpenAiThinking
+    {
+        public required string Type { get; init; }
+    }
+
+    private sealed class OpenAiProviderOptions
+    {
+        public required OpenAiRoutingPreferences Gateway { get; init; }
+    }
+
+    private sealed class PayloadCompat
+    {
+        public required bool SupportsStore { get; init; }
+        public required bool SupportsDeveloperRole { get; init; }
+        public required bool SupportsReasoningEffort { get; init; }
+        public required string ThinkingFormat { get; init; }
+        public OpenAiRoutingPreferences? OpenRouterRouting { get; init; }
+        public OpenAiRoutingPreferences? VercelGatewayRouting { get; init; }
+    }
+
     private sealed class OpenAiMessage
     {
         public required string Role { get; init; }
         public string? Content { get; init; }
         public string? ToolCallId { get; init; }
+        public string? Name { get; init; }
         public List<OpenAiToolCall>? ToolCalls { get; init; }
     }
 
@@ -498,6 +749,7 @@ public sealed class OpenAiLlmProvider : ILlmProvider
         public required string Name { get; init; }
         public required string Description { get; init; }
         public required JsonElement Parameters { get; init; }
+        public bool? Strict { get; init; }
     }
 
     private sealed class OpenAiToolCall

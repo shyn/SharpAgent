@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Sharp.AI;
 using Sharp.Core.Configuration;
 
@@ -325,6 +326,337 @@ public sealed class AgentConfigurationServiceTests
     }
 
     [Fact]
+    public void LoadFromFile_ParsesOpenAiResponsesApiFormat()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"sharp-config-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path,
+                """
+                {
+                  "defaultModel": "openai/gpt-5-mini",
+                  "providers": [
+                    {
+                      "id": "openai",
+                      "api": "openai-responses",
+                      "apiKey": "test-key",
+                      "baseUrl": "https://api.openai.com/v1/",
+                      "models": [
+                        { "id": "gpt-5-mini" }
+                      ]
+                    }
+                  ]
+                }
+                """);
+
+            var service = AgentConfigurationService.LoadFromFile(path);
+            var options = service.BuildRuntimeOptions();
+            Assert.Equal(ProviderApiKind.OpenAiResponses, options.Model.ApiKind);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void LoadFromFile_ParsesOpenAiCompletionsCompat()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"sharp-config-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path,
+                """
+                {
+                  "defaultModel": "openai/gpt-4o-mini",
+                  "providers": [
+                    {
+                      "id": "openai",
+                      "api": "openai-completions",
+                      "apiKey": "test-key",
+                      "baseUrl": "https://api.openai.com/v1/",
+                      "models": [
+                        {
+                          "id": "gpt-4o-mini",
+                          "compat": {
+                            "supportsStore": false,
+                            "supportsDeveloperRole": false,
+                            "supportsReasoningEffort": false,
+                            "supportsUsageInStreaming": false,
+                            "supportsStrictMode": false,
+                            "requiresToolResultName": true,
+                            "requiresAssistantAfterToolResult": true,
+                            "requiresMistralToolIds": true,
+                            "requiresThinkingAsText": true,
+                            "maxTokensField": "max_completion_tokens",
+                            "thinkingFormat": "zai",
+                            "openRouterRouting": {
+                              "only": ["anthropic", "openai"],
+                              "order": ["openai", "anthropic"]
+                            },
+                            "vercelGatewayRouting": {
+                              "only": ["gateway-a"],
+                              "order": ["gateway-b", "gateway-a"]
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """);
+
+            var service = AgentConfigurationService.LoadFromFile(path);
+            var options = service.BuildRuntimeOptions();
+
+            Assert.Equal(ProviderApiKind.OpenAiChatCompletions, options.Model.ApiKind);
+            Assert.NotNull(options.Model.OpenAiCompletionsCompat);
+            Assert.False(options.Model.OpenAiCompletionsCompat!.SupportsUsageInStreaming);
+            Assert.False(options.Model.OpenAiCompletionsCompat.SupportsStrictMode);
+            Assert.True(options.Model.OpenAiCompletionsCompat.RequiresToolResultName);
+            Assert.True(options.Model.OpenAiCompletionsCompat.RequiresAssistantAfterToolResult);
+            Assert.True(options.Model.OpenAiCompletionsCompat.RequiresMistralToolIds);
+            Assert.True(options.Model.OpenAiCompletionsCompat.RequiresThinkingAsText);
+            Assert.Equal(OpenAiMaxTokensField.MaxCompletionTokens, options.Model.OpenAiCompletionsCompat.MaxTokensField);
+            Assert.Equal(false, options.Model.OpenAiCompletionsCompat.SupportsStore);
+            Assert.Equal(false, options.Model.OpenAiCompletionsCompat.SupportsDeveloperRole);
+            Assert.Equal(false, options.Model.OpenAiCompletionsCompat.SupportsReasoningEffort);
+            Assert.Equal(OpenAiThinkingFormats.Zai, options.Model.OpenAiCompletionsCompat.ThinkingFormat);
+            var openRouterRouting = options.Model.OpenAiCompletionsCompat.OpenRouterRouting;
+            Assert.NotNull(openRouterRouting);
+            Assert.NotNull(openRouterRouting!.Only);
+            Assert.Equal(["anthropic", "openai"], openRouterRouting.Only);
+            Assert.NotNull(openRouterRouting.Order);
+            Assert.Equal(["openai", "anthropic"], openRouterRouting.Order);
+            var vercelGatewayRouting = options.Model.OpenAiCompletionsCompat.VercelGatewayRouting;
+            Assert.NotNull(vercelGatewayRouting);
+            Assert.NotNull(vercelGatewayRouting!.Only);
+            Assert.Equal(["gateway-a"], vercelGatewayRouting.Only);
+            Assert.NotNull(vercelGatewayRouting.Order);
+            Assert.Equal(["gateway-b", "gateway-a"], vercelGatewayRouting.Order);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void BuildRuntimeOptions_OpenAiCompletions_InfersCompatFromMistralBaseUrl()
+    {
+        var config = new AgentConfig
+        {
+            DefaultModel = "mistral/open-mistral-nemo",
+            Providers =
+            [
+                new ProviderConfig
+                {
+                    Id = "mistral",
+                    Api = ModelApiFormat.OpenAiCompletions,
+                    ApiKey = "test-key",
+                    BaseUrl = "https://api.mistral.ai/v1/",
+                    Models =
+                    [
+                        new ModelConfig
+                        {
+                            Id = "open-mistral-nemo"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        var service = new AgentConfigurationService(config);
+        var options = service.BuildRuntimeOptions();
+        var compat = options.Model.OpenAiCompletionsCompat;
+
+        Assert.NotNull(compat);
+        Assert.True(compat!.RequiresToolResultName);
+        Assert.True(compat.RequiresMistralToolIds);
+        Assert.True(compat.RequiresThinkingAsText);
+        Assert.Equal(OpenAiMaxTokensField.MaxTokens, compat.MaxTokensField);
+        Assert.Equal(false, compat.SupportsStore);
+        Assert.Equal(false, compat.SupportsDeveloperRole);
+        Assert.Equal(true, compat.SupportsReasoningEffort);
+        Assert.Equal(OpenAiThinkingFormats.OpenAi, compat.ThinkingFormat);
+        Assert.Null(compat.OpenRouterRouting);
+        Assert.Null(compat.VercelGatewayRouting);
+    }
+
+    [Fact]
+    public void BuildRuntimeOptions_OpenAiCompletions_ExplicitCompatOverridesInferredDefaults()
+    {
+        var config = new AgentConfig
+        {
+            DefaultModel = "proxy/open-mistral-nemo",
+            Providers =
+            [
+                new ProviderConfig
+                {
+                    Id = "proxy",
+                    Api = ModelApiFormat.OpenAiCompletions,
+                    ApiKey = "test-key",
+                    BaseUrl = "https://api.mistral.ai/v1/",
+                    Models =
+                    [
+                        new ModelConfig
+                        {
+                            Id = "open-mistral-nemo",
+                            Compat = new OpenAiCompletionsCompatConfig
+                            {
+                                SupportsStore = true,
+                                SupportsDeveloperRole = true,
+                                SupportsReasoningEffort = false,
+                                SupportsUsageInStreaming = false,
+                                RequiresMistralToolIds = false,
+                                MaxTokensField = "max_completion_tokens",
+                                ThinkingFormat = OpenAiThinkingFormats.Qwen,
+                                OpenRouterRouting = new OpenAiRoutingPreferences(
+                                    Only: ["anthropic"],
+                                    Order: ["openai", "anthropic"]),
+                                VercelGatewayRouting = new OpenAiRoutingPreferences(
+                                    Only: ["gateway-openai"])
+                            }
+                        }
+                    ]
+                }
+            ]
+        };
+
+        var service = new AgentConfigurationService(config);
+        var options = service.BuildRuntimeOptions();
+        var compat = options.Model.OpenAiCompletionsCompat;
+
+        Assert.NotNull(compat);
+        Assert.False(compat!.SupportsUsageInStreaming);
+        Assert.False(compat.RequiresMistralToolIds);
+        Assert.Equal(OpenAiMaxTokensField.MaxCompletionTokens, compat.MaxTokensField);
+        Assert.True(compat.RequiresToolResultName);
+        Assert.True(compat.RequiresThinkingAsText);
+        Assert.Equal(true, compat.SupportsStore);
+        Assert.Equal(true, compat.SupportsDeveloperRole);
+        Assert.Equal(false, compat.SupportsReasoningEffort);
+        Assert.Equal(OpenAiThinkingFormats.Qwen, compat.ThinkingFormat);
+        var openRouterRouting = compat.OpenRouterRouting;
+        Assert.NotNull(openRouterRouting);
+        Assert.NotNull(openRouterRouting!.Only);
+        Assert.Equal(["anthropic"], openRouterRouting.Only);
+        Assert.NotNull(openRouterRouting.Order);
+        Assert.Equal(["openai", "anthropic"], openRouterRouting.Order);
+        var vercelGatewayRouting = compat.VercelGatewayRouting;
+        Assert.NotNull(vercelGatewayRouting);
+        Assert.NotNull(vercelGatewayRouting!.Only);
+        Assert.Equal(["gateway-openai"], vercelGatewayRouting.Only);
+    }
+
+    [Fact]
+    public void BuildRuntimeOptions_OpenAiCompletions_InfersCompatMatrixForKnownProvidersAndUrls()
+    {
+        var chutesCompat = BuildOpenAiCompletionsCompat("proxy", "https://api.chutes.ai/v1/");
+        Assert.True(chutesCompat.SupportsUsageInStreaming);
+        Assert.Equal(OpenAiMaxTokensField.MaxTokens, chutesCompat.MaxTokensField);
+        Assert.Equal(false, chutesCompat.SupportsStore);
+        Assert.Equal(false, chutesCompat.SupportsDeveloperRole);
+        Assert.Equal(true, chutesCompat.SupportsReasoningEffort);
+        Assert.Equal(OpenAiThinkingFormats.OpenAi, chutesCompat.ThinkingFormat);
+
+        var gatewayzCompat = BuildOpenAiCompletionsCompat("proxy", "https://api.gatewayz.ai/v1/");
+        Assert.False(gatewayzCompat.SupportsUsageInStreaming);
+        Assert.Equal(OpenAiMaxTokensField.MaxCompletionTokens, gatewayzCompat.MaxTokensField);
+        Assert.Equal(true, gatewayzCompat.SupportsStore);
+        Assert.Equal(true, gatewayzCompat.SupportsDeveloperRole);
+        Assert.Equal(true, gatewayzCompat.SupportsReasoningEffort);
+        Assert.Equal(OpenAiThinkingFormats.OpenAi, gatewayzCompat.ThinkingFormat);
+
+        var deepseekCompat = BuildOpenAiCompletionsCompat("proxy", "https://api.deepseek.com/v1/");
+        Assert.True(deepseekCompat.SupportsUsageInStreaming);
+        Assert.Equal(OpenAiMaxTokensField.MaxCompletionTokens, deepseekCompat.MaxTokensField);
+        Assert.Equal(false, deepseekCompat.SupportsStore);
+        Assert.Equal(false, deepseekCompat.SupportsDeveloperRole);
+        Assert.Equal(true, deepseekCompat.SupportsReasoningEffort);
+        Assert.Equal(OpenAiThinkingFormats.OpenAi, deepseekCompat.ThinkingFormat);
+
+        var zaiCompat = BuildOpenAiCompletionsCompat("zai", "https://proxy.example.com/v1/");
+        Assert.True(zaiCompat.SupportsUsageInStreaming);
+        Assert.Equal(OpenAiMaxTokensField.MaxCompletionTokens, zaiCompat.MaxTokensField);
+        Assert.Equal(false, zaiCompat.SupportsStore);
+        Assert.Equal(false, zaiCompat.SupportsDeveloperRole);
+        Assert.Equal(false, zaiCompat.SupportsReasoningEffort);
+        Assert.Equal(OpenAiThinkingFormats.Zai, zaiCompat.ThinkingFormat);
+
+        var qwenCompat = BuildOpenAiCompletionsCompat("proxy", "https://dashscope.aliyuncs.com/compatible-mode/v1");
+        Assert.True(qwenCompat.SupportsUsageInStreaming);
+        Assert.Equal(OpenAiMaxTokensField.MaxCompletionTokens, qwenCompat.MaxTokensField);
+        Assert.Equal(true, qwenCompat.SupportsStore);
+        Assert.Equal(true, qwenCompat.SupportsDeveloperRole);
+        Assert.Equal(true, qwenCompat.SupportsReasoningEffort);
+        Assert.Equal(OpenAiThinkingFormats.Qwen, qwenCompat.ThinkingFormat);
+
+        var xaiByBaseUrlCompat = BuildOpenAiCompletionsCompat("proxy", "https://api.x.ai/v1/");
+        Assert.Equal(false, xaiByBaseUrlCompat.SupportsStore);
+        Assert.Equal(false, xaiByBaseUrlCompat.SupportsDeveloperRole);
+        Assert.Equal(false, xaiByBaseUrlCompat.SupportsReasoningEffort);
+    }
+
+    [Fact]
+    public void BuildRuntimeOptions_OpenAiCompletions_ExplicitCompatTakesPrecedenceOverGatewayzInference()
+    {
+        var compat = BuildOpenAiCompletionsCompat(
+            providerId: "proxy",
+            baseUrl: "https://api.gatewayz.ai/v1/",
+            compat: new OpenAiCompletionsCompatConfig
+            {
+                SupportsUsageInStreaming = true,
+                SupportsStore = false,
+                SupportsDeveloperRole = false,
+                SupportsReasoningEffort = false,
+                ThinkingFormat = OpenAiThinkingFormats.Zai
+            });
+
+        Assert.True(compat.SupportsUsageInStreaming);
+        Assert.Equal(false, compat.SupportsStore);
+        Assert.Equal(false, compat.SupportsDeveloperRole);
+        Assert.Equal(false, compat.SupportsReasoningEffort);
+        Assert.Equal(OpenAiThinkingFormats.Zai, compat.ThinkingFormat);
+        Assert.Equal(OpenAiMaxTokensField.MaxCompletionTokens, compat.MaxTokensField);
+    }
+
+    [Fact]
+    public void BuildRuntimeOptions_OpenAiCompletions_InvalidThinkingFormat_ThrowsJsonException()
+    {
+        var config = new AgentConfig
+        {
+            DefaultModel = "openai/gpt-4o-mini",
+            Providers =
+            [
+                new ProviderConfig
+                {
+                    Id = "openai",
+                    Api = ModelApiFormat.OpenAiCompletions,
+                    ApiKey = "test-key",
+                    BaseUrl = "https://api.openai.com/v1/",
+                    Models =
+                    [
+                        new ModelConfig
+                        {
+                            Id = "gpt-4o-mini",
+                            Compat = new OpenAiCompletionsCompatConfig
+                            {
+                                ThinkingFormat = "unsupported-thinking-format"
+                            }
+                        }
+                    ]
+                }
+            ]
+        };
+
+        var service = new AgentConfigurationService(config);
+        Assert.Throws<JsonException>(() => service.BuildRuntimeOptions());
+    }
+
+    [Fact]
     public void LoadFromFile_ParsesLegacyModelApiFormatForBackwardCompatibility()
     {
         var path = Path.Combine(Path.GetTempPath(), $"sharp-config-{Guid.NewGuid():N}.json");
@@ -463,6 +795,40 @@ public sealed class AgentConfigurationServiceTests
                 var validation = service.ValidateConfig();
                 Assert.True(validation.IsValid);
             });
+    }
+
+    private static OpenAiCompletionsCompat BuildOpenAiCompletionsCompat(
+        string providerId,
+        string baseUrl,
+        OpenAiCompletionsCompatConfig? compat = null)
+    {
+        var config = new AgentConfig
+        {
+            DefaultModel = $"{providerId}/model",
+            Providers =
+            [
+                new ProviderConfig
+                {
+                    Id = providerId,
+                    Api = ModelApiFormat.OpenAiCompletions,
+                    ApiKey = "test-key",
+                    BaseUrl = baseUrl,
+                    Models =
+                    [
+                        new ModelConfig
+                        {
+                            Id = "model",
+                            Compat = compat
+                        }
+                    ]
+                }
+            ]
+        };
+
+        var service = new AgentConfigurationService(config);
+        var resolvedCompat = service.BuildRuntimeOptions().Model.OpenAiCompletionsCompat;
+        Assert.NotNull(resolvedCompat);
+        return resolvedCompat!;
     }
 
     private static void WithEnvironmentVariables(

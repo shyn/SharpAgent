@@ -28,7 +28,22 @@
         {
           "id": "gpt-4o-mini",
           "contextWindow": 128000,
-          "maxOutputTokens": 16384
+          "maxOutputTokens": 16384,
+          "compat": {
+            "supportsStore": true,
+            "supportsDeveloperRole": true,
+            "supportsReasoningEffort": true,
+            "supportsUsageInStreaming": true,
+            "supportsStrictMode": true,
+            "maxTokensField": "max_tokens",
+            "thinkingFormat": "openai",
+            "openRouterRouting": {
+              "order": ["openai", "anthropic"]
+            },
+            "vercelGatewayRouting": {
+              "only": ["openai"]
+            }
+          }
         },
         {
           "id": "gpt-4o",
