@@ -3,97 +3,50 @@
   "providers": [
     {
       "id": "antigravity",
-      "apiKey": null,
-      "baseUrl": "http://localhost:8045/",
+      "api": "openai-completions",
+      "apiKey": "dummy",
+      "baseUrl": "http://localhost:8045/v1/",
       "models": [
         {
-          "id": "gemini-3-flash",
-          "apiFormats": [
-            "Anthropic"
-          ],
-          "contextWindow": 128000,
-          "maxOutputTokens": 16384,
-          "capabilities": {
-            "toolCall": true,
-            "image": true,
-            "thinking": false,
-            "temperature": true,
-            "reasoningEffort": false
-          }
+          "id": "opus-4-5",
+          "contextWindow": 256000,
+          "maxOutputTokens": 16384
         },
         {
-          "id": "gpt-4o",
-          "apiFormats": [
-            "OpenAI"
-          ],
-          "contextWindow": 128000,
-          "maxOutputTokens": 16384,
-          "capabilities": {
-            "toolCall": true,
-            "image": true,
-            "thinking": false,
-            "temperature": true,
-            "reasoningEffort": false
-          }
+          "id": "gemini-3-flash",
+          "contextWindow": 1024000,
+          "maxOutputTokens": 16384
         }
       ]
     },
     {
       "id": "openai",
+      "api": "openai-completions",
       "apiKey": null,
       "baseUrl": "https://api.openai.com/v1/",
       "models": [
         {
           "id": "gpt-4o-mini",
-          "apiFormats": [
-            "OpenAI"
-          ],
           "contextWindow": 128000,
-          "maxOutputTokens": 16384,
-          "capabilities": {
-            "toolCall": true,
-            "image": true,
-            "thinking": false,
-            "temperature": true,
-            "reasoningEffort": false
-          }
+          "maxOutputTokens": 16384
         },
         {
           "id": "gpt-4o",
-          "apiFormats": [
-            "OpenAI"
-          ],
           "contextWindow": 128000,
-          "maxOutputTokens": 16384,
-          "capabilities": {
-            "toolCall": true,
-            "image": true,
-            "thinking": false,
-            "temperature": true,
-            "reasoningEffort": false
-          }
+          "maxOutputTokens": 16384
         }
       ]
     },
     {
       "id": "anthropic",
+      "api": "anthropic-messages",
       "apiKey": null,
       "baseUrl": "https://api.anthropic.com/v1/",
       "models": [
         {
           "id": "claude-sonnet-4-20250514",
-          "apiFormats": [
-            "Anthropic"
-          ],
           "contextWindow": 200000,
-          "maxOutputTokens": 8192,
-          "capabilities": {
-            "toolCall": true,
-            "image": true,
-            "thinking": true,
-            "temperature": true,
-            "reasoningEffort": false
-          }
+          "maxOutputTokens": 8192
         }
       ]
     }
