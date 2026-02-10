@@ -14,8 +14,32 @@
 ├── Sharp.Cli.Tests/
 ├── Sharp.Core/
 ├── Sharp.Core.Tests/
-└── SharpAgent.sln
+├── SharpAgent.sln
+└── pi-mono -> ../pi-mono
 ```
+
+## 项目定位（重要）
+
+1. `SharpAgent` 是对 `pi-mono`（重点参考 `packages/ai`、`packages/agent`、`packages/coding-agent`）的 **C# rewrite**。
+2. 当前仓库根目录已提供软链接：`./pi-mono -> ../pi-mono`。
+3. 在实现、修复和重构时，若涉及行为语义、事件模型、会话格式、工具协议与边界条件，默认应优先对照 `pi-mono`。
+
+## 参考策略（pi-mono）
+
+1. 优先读文档：先明确目标语义和边界，再动代码。
+2. 再对照实现：以 `pi-mono` 对应模块代码作为行为基线。
+3. 最后对照测试：遇到不确定语义时，以 `pi-mono` 测试用例校准预期。
+4. 若 `SharpAgent` 因平台或架构差异无法完全一致：
+   - 在 PR/提交说明中明确差异与理由；
+   - 在 `Sharp.Core.Tests` / `Sharp.Cli.Tests` 补充对应测试，固定当前行为。
+
+## C# 重写原则（重要）
+
+1. 目标是 **语义对齐**，不是逐行/逐语法翻译；在保证行为一致的前提下，应优先采用 C#/.NET 的惯用写法。
+2. 重写过程需尽可能使用 C# 编程风格和范式：清晰类型边界、面向接口设计、异步 `async/await` + `CancellationToken`、必要时使用 `IAsyncEnumerable`。
+3. 避免机械照搬 TypeScript/JavaScript 形态（例如过度动态结构、弱类型约定）；应改写为符合 .NET 生态的可维护实现。
+4. 当“原实现写法”与 “C# 最佳实践”冲突时，优先选择：正确性与可维护性 > 性能 > 形式一致性，并用测试锁定行为等价。
+5. 命名、异常模型、序列化边界、配置与扩展点设计应符合 C# 社区最佳实践，确保长期演进成本可控。
 
 ## 当前阶段状态
 

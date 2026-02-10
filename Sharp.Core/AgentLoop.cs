@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text;
 using Sharp.AI;
+using Sharp.Core.Compaction;
 
 namespace Sharp.Core;
 
@@ -14,6 +15,42 @@ public sealed class AgentLoop
         _provider = provider;
         _toolRuntime = toolRuntime;
     }
+
+    /// <summary>
+    /// Checks if compaction is needed and yields a compaction required event if so.
+    /// This allows the caller to handle compaction before continuing.
+    /// </summary>
+    /// <param name="conversation">The current conversation.</param>
+    /// <param name="compactionService">Optional compaction service to check thresholds.</param>
+    /// <param name="onCompactionRequired">Optional callback when compaction is required.</param>
+    /// <returns>True if compaction is required and caller should handle it.</returns>
+    public static bool CheckCompaction(
+        IReadOnlyList<LlmMessage> conversation,
+        CompactionService? compactionService,
+        Action<int>? onCompactionRequired = null)
+    {
+        if (compactionService == null)
+            return false;
+
+        var tokenCount = TokenEstimator.EstimateConversationTokens(conversation.ToList(), null);
+
+        // Get context window from settings or use a reasonable default
+        var contextWindow = 128000; // Default for many modern models
+
+        if (compactionService.ShouldCompact(tokenCount, contextWindow))
+        {
+            onCompactionRequired?.Invoke(tokenCount);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Estimates the current token count for the conversation.
+    /// </summary>
+    public static int EstimateTokens(IReadOnlyList<LlmMessage> conversation, string? systemPrompt = null)
+        => TokenEstimator.EstimateConversationTokens(conversation.ToList(), systemPrompt);
 
     public IAsyncEnumerable<AgentEvent> RunAsync(
         List<LlmMessage> conversation,
@@ -54,6 +91,7 @@ public sealed class AgentLoop
         Action<System.Text.Json.JsonElement>? onPayload = null,
         ThinkingBudgets? thinkingBudgets = null,
         Action<string>? onDebugLog = null,
+        CompactionService? compactionService = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         yield return new AgentStartedEvent(prompt, isContinuation);
@@ -61,6 +99,17 @@ public sealed class AgentLoop
         for (var turn = 0; turn < maxTurns; turn++)
         {
             ct.ThrowIfCancellationRequested();
+
+            // Check if compaction is needed before processing this turn
+            if (compactionService != null)
+            {
+                var tokenCount = TokenEstimator.EstimateConversationTokens(conversation, systemPrompt);
+                if (compactionService.ShouldCompact(tokenCount, model.ContextWindow))
+                {
+                    var threshold = (int)((model.ContextWindow ?? 128000) * compactionService.Settings.ThresholdRatio);
+                    yield return new AgentCompactionRequiredEvent(tokenCount, threshold);
+                }
+            }
 
             var textBuilder = new StringBuilder();
             var thinkingBuilder = new StringBuilder();

@@ -325,6 +325,7 @@ public sealed class AgentSession : IDisposable, IExtensionRuntimeHost
                                _onPayload,
                                _thinkingBudgets,
                                _onDebugLog,
+                               null, // compactionService - not yet integrated
                                runToken))
             {
                 yield return evt;
@@ -382,6 +383,7 @@ public sealed class AgentSession : IDisposable, IExtensionRuntimeHost
                                _onPayload,
                                _thinkingBudgets,
                                _onDebugLog,
+                               null, // compactionService - not yet integrated
                                runToken))
             {
                 yield return evt;

@@ -29,6 +29,13 @@ Sharp.Core uses a session-driven ReAct loop.
    - emit `AgentCompletedEvent`
    - stop.
 
+## Compaction Status
+
+- `AgentLoop` supports threshold checks with optional `CompactionService` and can emit `AgentCompactionRequiredEvent`.
+- `AgentSession.PromptAsync(...)` and `ContinueAsync(...)` currently do not pass a compaction service, so auto-compaction is not active by default.
+- Compaction can still be applied through session APIs/extensions that append compaction entries.
+- `CompactionService` maps message cut points back to entry boundaries before producing `FirstKeptEntryId`/`CompactedEntryIds`, so non-message entries do not skew compaction metadata.
+
 ## Safety Boundaries
 
 - `MaxTurns` prevents infinite loops.

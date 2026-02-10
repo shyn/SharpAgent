@@ -84,6 +84,24 @@
 
 - 可以将 `providers[].apiKey` 置空，通过环境变量运行。
 
+### 5. Compaction entry 边界映射修复（P1）
+
+问题：`CompactionService` 先在 message 视图上计算 cut point，再直接按相同索引切分原始 entries；当分支中存在 `model_change`、`label`、历史 `compaction` 等非 message entry 时，`FirstKeptEntryId` 与 `CompactedEntryIds` 可能偏移。
+
+已完成：
+
+- 在 `CompactionService` 中增加 message->entry 映射：
+  - 先构建 `ConversationEntry(entryIndex, message)` 列表。
+  - 用 message cut point 映射回 entry cut point，再切分 entries。
+- 保持摘要输入与 token 估算仍基于 message 视图，避免行为退化。
+- 新增回归测试覆盖混合 entry 场景：
+  - `Sharp.Core.Tests/Compaction/CompactionServiceTests.cs`
+  - `CompactAsync_WithNonMessageEntries_MapsCutPointToEntryBoundary`
+
+结果：
+
+- compaction 元数据在混合 entry 分支上与上下文重建边界一致，避免“应被压缩消息残留/重复”问题。
+
 ## 文档同步
 
 已同步：
@@ -91,18 +109,19 @@
 - `AGENTS.md`：更新当前阶段状态（CLI 已上线、插件与配置新能力、已知约束）。
 - `README.md`：补充环境变量注入说明。
 - `docs/configuration.md`：补充 provider 通用 env var 规则与示例。
+- `docs/how_it_works.md` / `docs/architecture.md` / `docs/agent_loop.md`：同步扩展运行时、compaction 能力边界与自动接线现状。
 
 ## 验证结果
 
 执行命令：
 
 ```bash
-dotnet test SharpAgent.sln -m:1 -nr:false -v minimal
+dotnet test Sharp.Core.Tests/Sharp.Core.Tests.csproj -m:1 -nr:false -v minimal
 ```
 
 结果：
 
-- 通过：`145 total / 140 passed / 5 skipped / 0 failed`
+- 通过：`149 total / 144 passed / 5 skipped / 0 failed`
 - 环境警告：`NU1900`（nuget vulnerability source 不可达）仍存在，不阻断。
 
 ## 当前风险 / 待办

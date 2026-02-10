@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Sharp.AI;
+using Sharp.Core.Compaction;
 
 namespace Sharp.Core.Sessions;
 
@@ -162,6 +163,85 @@ public sealed class SessionManager
         string? label,
         CancellationToken ct = default)
         => await AppendEntryAsync("label", new LabelEntryPayload(targetId, label), ct);
+
+    /// <summary>
+    /// Applies a compaction result by creating a compaction entry.
+    /// The compacted entries remain in the session but are excluded from context reconstruction.
+    /// </summary>
+    /// <param name="result">The compaction result from CompactionService.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The created compaction entry.</returns>
+    public async Task<SessionEntryEnvelope> ApplyCompactionAsync(
+        CompactionResult result,
+        CancellationToken ct = default)
+    {
+        if (result == null)
+            throw new ArgumentNullException(nameof(result));
+
+        return await AppendCompactionAsync(
+            result.Summary,
+            result.FirstKeptEntryId ?? string.Empty,
+            result.TokensBefore,
+            result.Details,
+            result.FromHook,
+            ct);
+    }
+
+    /// <summary>
+    /// Gets all entries that would be compacted given a compaction result.
+    /// Useful for displaying what was compacted.
+    /// </summary>
+    /// <param name="result">The compaction result.</param>
+    /// <returns>The list of entries that were compacted.</returns>
+    public IReadOnlyList<SessionEntryEnvelope> GetCompactedEntries(CompactionResult result)
+    {
+        if (result?.CompactedEntryIds == null)
+            return [];
+
+        var compacted = new List<SessionEntryEnvelope>();
+        foreach (var id in result.CompactedEntryIds)
+        {
+            if (_entriesById.TryGetValue(id, out var entry))
+                compacted.Add(entry);
+        }
+        return compacted;
+    }
+
+    /// <summary>
+    /// Gets the current branch entries for compaction analysis.
+    /// </summary>
+    /// <returns>The entries from root to current leaf.</returns>
+    public IReadOnlyList<SessionEntryEnvelope> GetCurrentBranch()
+        => GetBranch(_currentLeafId);
+
+    /// <summary>
+    /// Checks if a compaction entry exists in the current branch.
+    /// </summary>
+    /// <returns>True if the conversation has been compacted.</returns>
+    public bool HasCompaction()
+    {
+        var branch = GetBranch(_currentLeafId);
+        return branch.Any(e => e.Type == "compaction");
+    }
+
+    /// <summary>
+    /// Gets the most recent compaction entry in the current branch, if any.
+    /// </summary>
+    /// <returns>The compaction entry payload, or null if no compaction exists.</returns>
+    public CompactionEntryPayload? GetLatestCompaction()
+    {
+        var branch = GetBranch(_currentLeafId);
+
+        for (var i = branch.Count - 1; i >= 0; i--)
+        {
+            if (branch[i].Type == "compaction")
+            {
+                return branch[i].Payload.Deserialize<CompactionEntryPayload>(JsonDefaults.Options);
+            }
+        }
+
+        return null;
+    }
 
     public void SwitchLeaf(string entryId)
     {

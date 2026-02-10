@@ -14,6 +14,8 @@ SharpAgent currently targets a **headless library runtime**.
    - Agent loop (`AgentLoop`)
    - Tool execution (`ToolRuntime`)
    - JSONL tree sessions (`SessionManager`)
+   - Extension runtime lifecycle hooks (`ExtensionRuntime`)
+   - Context compaction primitives (`CompactionService`, compaction entries)
 
 3. `Sharp.Core.Tests`
    - Unit + integration validation
@@ -27,5 +29,5 @@ This keeps agent behavior testable without coupling loop logic to wire protocols
 ## Current Non-Goals
 
 - No TUI/Web/Desktop host.
-- No extension runtime.
-- No compaction pipeline yet.
+- No extension isolation/unload via `AssemblyLoadContext` yet.
+- No automatic compaction wiring in `AgentSession.PromptAsync/ContinueAsync` yet.

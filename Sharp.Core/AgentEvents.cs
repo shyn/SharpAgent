@@ -35,3 +35,11 @@ public sealed record AgentErrorEvent(
     LlmErrorCategory Category = LlmErrorCategory.Unknown,
     int? StatusCode = null,
     bool Retryable = false) : AgentEvent;
+
+/// <summary>
+/// Event raised when the conversation has grown large enough to require compaction.
+/// The caller should handle this by triggering compaction through the CompactionService.
+/// </summary>
+/// <param name="TokenCount">Current estimated token count.</param>
+/// <param name="Threshold">The token threshold that was exceeded.</param>
+public sealed record AgentCompactionRequiredEvent(int TokenCount, int Threshold) : AgentEvent;

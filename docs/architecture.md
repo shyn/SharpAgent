@@ -32,6 +32,8 @@ Responsibilities:
 - Session control operations (`ContinueAsync`, steering/follow-up queue, abort/wait idle).
 - Tool runtime dispatch (`ToolRuntime`).
 - Tree-based JSONL persistence (`SessionManager`).
+- Extension runtime hooks (session/input/context/tool lifecycle events).
+- Compaction primitives (`CompactionService`, compaction session entries).
 - Built-in coding tools: `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`.
 - Configuration utilities (`AgentConfigurationService`).
 
@@ -69,9 +71,11 @@ graph TD
 - First line: `session` header.
 - Subsequent lines: entries with `id`, `parentId`, `type`, `payload`.
 - Context rebuild supports `message`, `custom_message`, `branch_summary`, and `compaction`.
+- Compaction anchors restoration with `firstKeptEntryId` (entry-id boundary).
 
 ## Non-Goals in This Phase
 
 - No interactive shell, no web API, no desktop UI.
-- No extension/plugin runtime.
+- No extension isolation/unload via `AssemblyLoadContext` yet.
+- No automatic compaction wiring in `AgentSession` loop yet.
 - No UI-level compaction workflow yet (entries and context rebuild hooks exist in core storage).
