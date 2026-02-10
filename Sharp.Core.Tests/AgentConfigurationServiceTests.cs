@@ -89,6 +89,122 @@ public sealed class AgentConfigurationServiceTests
     }
 
     [Fact]
+    public void BuildRuntimeOptions_CustomAnthropicProvider_IgnoresGlobalAnthropicBaseUrlAlias()
+    {
+        var config = new AgentConfig
+        {
+            DefaultModel = "antigravity/gemini-3-flash",
+            Providers =
+            [
+                new ProviderConfig
+                {
+                    Id = "antigravity",
+                    Api = ModelApiFormat.AnthropicMessages,
+                    ApiKey = "dummy",
+                    BaseUrl = "http://localhost:8045/v1/",
+                    Models =
+                    [
+                        new ModelConfig
+                        {
+                            Id = "gemini-3-flash"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        WithEnvironmentVariables(
+            new Dictionary<string, string?>
+            {
+                ["ANTHROPIC_BASE_URL"] = "https://api.kimi.com/coding/v1/"
+            },
+            () =>
+            {
+                var service = new AgentConfigurationService(config);
+                var options = service.BuildRuntimeOptions();
+                Assert.Equal("http://localhost:8045/v1/", options.BaseUrl);
+            });
+    }
+
+    [Fact]
+    public void BuildRuntimeOptions_CustomAnthropicProvider_IgnoresGlobalAnthropicApiKeyAlias()
+    {
+        var config = new AgentConfig
+        {
+            DefaultModel = "antigravity/gemini-3-flash",
+            Providers =
+            [
+                new ProviderConfig
+                {
+                    Id = "antigravity",
+                    Api = ModelApiFormat.AnthropicMessages,
+                    ApiKey = "config-key",
+                    BaseUrl = "http://localhost:8045/v1/",
+                    Models =
+                    [
+                        new ModelConfig
+                        {
+                            Id = "gemini-3-flash"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        WithEnvironmentVariables(
+            new Dictionary<string, string?>
+            {
+                ["ANTHROPIC_API_KEY"] = "global-anthropic-key"
+            },
+            () =>
+            {
+                var service = new AgentConfigurationService(config);
+                var options = service.BuildRuntimeOptions();
+                Assert.Equal("config-key", options.ApiKey);
+            });
+    }
+
+    [Fact]
+    public void BuildRuntimeOptions_CanonicalAnthropicProvider_UsesGlobalAnthropicAlias()
+    {
+        var config = new AgentConfig
+        {
+            DefaultModel = "anthropic/claude-sonnet-4-20250514",
+            Providers =
+            [
+                new ProviderConfig
+                {
+                    Id = "anthropic",
+                    Api = ModelApiFormat.AnthropicMessages,
+                    ApiKey = null,
+                    BaseUrl = "https://api.anthropic.com/v1/",
+                    Models =
+                    [
+                        new ModelConfig
+                        {
+                            Id = "claude-sonnet-4-20250514"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        WithEnvironmentVariables(
+            new Dictionary<string, string?>
+            {
+                ["ANTHROPIC_API_KEY"] = "global-anthropic-key",
+                ["ANTHROPIC_BASE_URL"] = "https://proxy.example.com/v1/"
+            },
+            () =>
+            {
+                var service = new AgentConfigurationService(config);
+                var options = service.BuildRuntimeOptions();
+                Assert.Equal("global-anthropic-key", options.ApiKey);
+                Assert.Equal("https://proxy.example.com/v1/", options.BaseUrl);
+            });
+    }
+
+    [Fact]
     public void BuildRuntimeOptions_EnvironmentApiKeyOverridesConfiguredApiKey()
     {
         var config = new AgentConfig

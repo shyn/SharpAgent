@@ -54,9 +54,7 @@ public sealed class OpenAiLlmProvider : ILlmProvider
             Content = new StringContent(payloadElement.GetRawText(), Encoding.UTF8, "application/json")
         };
 
-        var requestUrl = httpRequest.RequestUri == null
-            ? new Uri(_httpClient.BaseAddress ?? new Uri("http://localhost/"), "chat/completions")
-            : httpRequest.RequestUri;
+        var requestUrl = ResolveRequestUri(httpRequest, "chat/completions");
 
         if (!string.IsNullOrWhiteSpace(request.SessionId))
             httpRequest.Headers.TryAddWithoutValidation("x-session-id", request.SessionId);
@@ -180,6 +178,17 @@ public sealed class OpenAiLlmProvider : ILlmProvider
 
         foreach (var header in headers)
             request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+    }
+
+    private Uri ResolveRequestUri(HttpRequestMessage request, string relativePath)
+    {
+        var baseAddress = _httpClient.BaseAddress ?? new Uri("http://localhost/");
+        if (request.RequestUri == null)
+            return new Uri(baseAddress, relativePath);
+
+        return request.RequestUri.IsAbsoluteUri
+            ? request.RequestUri
+            : new Uri(baseAddress, request.RequestUri);
     }
 
     private static bool TryGetRetryAfterSeconds(HttpResponseMessage response, out int retryAfterSeconds)

@@ -325,14 +325,12 @@ public sealed class AgentConfigurationService
         Add($"SHARP_{providerToken}_{suffix}");
         Add($"{providerToken}_{suffix}");
 
-        if (provider.Api == ModelApiFormat.OpenAiCompletions
-            || provider.Id.Equals("openai", StringComparison.OrdinalIgnoreCase))
+        if (provider.Id.Equals("openai", StringComparison.OrdinalIgnoreCase))
         {
             Add($"OPENAI_{suffix}");
         }
 
-        if (provider.Api == ModelApiFormat.AnthropicMessages
-            || provider.Id.Equals("anthropic", StringComparison.OrdinalIgnoreCase))
+        if (provider.Id.Equals("anthropic", StringComparison.OrdinalIgnoreCase))
         {
             Add($"ANTHROPIC_{suffix}");
         }

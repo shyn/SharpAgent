@@ -67,6 +67,36 @@ public sealed class LlmProviderMappingTests
     }
 
     [Fact]
+    public async Task OpenAiProvider_DebugLog_UsesAbsoluteRequestUrl()
+    {
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("data: [DONE]\n", Encoding.UTF8, "text/event-stream")
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://api.openai.com/v1/")
+        };
+
+        using var provider = new OpenAiLlmProvider(httpClient);
+
+        var logs = new List<string>();
+        var request = new LlmRequest(
+            Model: new ModelDescriptor("openai", "gpt-4o-mini", ProviderApiKind.OpenAiChatCompletions),
+            SystemPrompt: "system",
+            Messages: [LlmMessage.UserText("hello")],
+            Tools: [],
+            OnDebugLog: logs.Add);
+
+        var events = await CollectAsync(provider.StreamAsync(request));
+        Assert.IsType<LlmCompletedEvent>(events.Last());
+        Assert.Contains(
+            logs,
+            log => log.StartsWith("request.url=https://api.openai.com/v1/chat/completions", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task AnthropicProvider_MapsRequestAndAssemblesThinkingAndToolCalls()
     {
         var sse = string.Join(
@@ -147,6 +177,52 @@ public sealed class LlmProviderMappingTests
         Assert.NotNull(handler.LastRequestBody);
         Assert.Contains("\"thinking\"", handler.LastRequestBody);
         Assert.Contains("\"tools\"", handler.LastRequestBody);
+    }
+
+    [Fact]
+    public async Task AnthropicProvider_DebugLog_UsesAbsoluteRequestUrl()
+    {
+        var sse = string.Join(
+            "\n",
+            [
+                "event: content_block_start",
+                "data: {\"index\":0,\"content_block\":{\"type\":\"text\"}}",
+                "",
+                "event: content_block_delta",
+                "data: {\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}",
+                "",
+                "event: content_block_stop",
+                "data: {\"index\":0}",
+                "",
+                "event: message_stop",
+                "data: {\"type\":\"message_stop\"}"
+            ]);
+
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(sse, Encoding.UTF8, "text/event-stream")
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://api.anthropic.com/v1/")
+        };
+
+        using var provider = new AnthropicLlmProvider(httpClient);
+
+        var logs = new List<string>();
+        var request = new LlmRequest(
+            Model: new ModelDescriptor("anthropic", "claude-sonnet-4-20250514", ProviderApiKind.AnthropicMessages),
+            SystemPrompt: "system",
+            Messages: [LlmMessage.UserText("hello")],
+            Tools: [],
+            OnDebugLog: logs.Add);
+
+        var events = await CollectAsync(provider.StreamAsync(request));
+        Assert.IsType<LlmCompletedEvent>(events.Last());
+        Assert.Contains(
+            logs,
+            log => log.StartsWith("request.url=https://api.anthropic.com/v1/messages", StringComparison.Ordinal));
     }
 
     [Fact]

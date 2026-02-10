@@ -47,7 +47,7 @@ CLI helpers:
   - `SHARP_<PROVIDER_ID>_BASE_URL`
   - `<PROVIDER_ID>_API_KEY`
   - `<PROVIDER_ID>_BASE_URL`
-- Compatibility aliases:
+- Compatibility aliases (only for canonical provider ids):
   - `OPENAI_API_KEY`
   - `OPENAI_BASE_URL`
   - `ANTHROPIC_API_KEY`
@@ -60,6 +60,7 @@ CLI helpers:
 Examples:
 
 - `openai` -> `SHARP_OPENAI_API_KEY`, `OPENAI_API_KEY`
+- `anthropic` -> `SHARP_ANTHROPIC_API_KEY`, `ANTHROPIC_API_KEY`
 - `kimi-coding` -> `SHARP_KIMI_CODING_API_KEY`, `KIMI_CODING_API_KEY`
 
 ## Notes

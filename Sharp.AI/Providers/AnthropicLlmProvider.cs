@@ -61,9 +61,7 @@ public sealed class AnthropicLlmProvider : ILlmProvider
             Content = new StringContent(payloadElement.GetRawText(), Encoding.UTF8, "application/json")
         };
 
-        var requestUrl = httpRequest.RequestUri == null
-            ? new Uri(_httpClient.BaseAddress ?? new Uri("http://localhost/"), "messages")
-            : httpRequest.RequestUri;
+        var requestUrl = ResolveRequestUri(httpRequest, "messages");
 
         if (payload.Thinking != null)
             httpRequest.Headers.TryAddWithoutValidation("anthropic-beta", "interleaved-thinking-2025-05-14");
@@ -188,6 +186,17 @@ public sealed class AnthropicLlmProvider : ILlmProvider
 
         foreach (var header in headers)
             request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+    }
+
+    private Uri ResolveRequestUri(HttpRequestMessage request, string relativePath)
+    {
+        var baseAddress = _httpClient.BaseAddress ?? new Uri("http://localhost/");
+        if (request.RequestUri == null)
+            return new Uri(baseAddress, relativePath);
+
+        return request.RequestUri.IsAbsoluteUri
+            ? request.RequestUri
+            : new Uri(baseAddress, request.RequestUri);
     }
 
     private static bool TryGetRetryAfterSeconds(HttpResponseMessage response, out int retryAfterSeconds)

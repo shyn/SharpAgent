@@ -98,7 +98,7 @@ dotnet run --project Sharp.Cli -- repl
 - API key/base URL can be injected by environment variables:
   - `SHARP_<PROVIDER_ID>_API_KEY`, `SHARP_<PROVIDER_ID>_BASE_URL`
   - `<PROVIDER_ID>_API_KEY`, `<PROVIDER_ID>_BASE_URL`
-  - compatibility aliases: `OPENAI_*`, `ANTHROPIC_*`
+  - compatibility aliases for canonical provider ids only: `OPENAI_*`, `ANTHROPIC_*`
 
 ## Current Scope
 
