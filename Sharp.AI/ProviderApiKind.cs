@@ -4,7 +4,8 @@ public enum ProviderApiKind
 {
     OpenAiChatCompletions,
     OpenAiResponses,
-    AnthropicMessages
+    AnthropicMessages,
+    GoogleGeminiCli
 }
 
 public enum ThinkingLevel

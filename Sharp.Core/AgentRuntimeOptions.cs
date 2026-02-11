@@ -7,6 +7,7 @@ public sealed class AgentRuntimeOptions
 {
     public required ModelDescriptor Model { get; init; }
     public required string ApiKey { get; init; }
+    public ILlmCredentialProvider? CredentialProvider { get; init; }
     public required string BaseUrl { get; init; }
 
     public string WorkingDirectory { get; init; } = Directory.GetCurrentDirectory();

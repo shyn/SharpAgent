@@ -82,6 +82,10 @@ dotnet run --project Sharp.Cli -- run "Read README.md and summarize the architec
 # interactive mode
 dotnet run --project Sharp.Cli -- repl
 
+# note:
+# - oauth login/logout commands are not implemented in Sharp.Cli yet
+# - provide oauth credentials via config apiKey or *_ACCESS_TOKEN/*_OAUTH_TOKEN env vars
+#
 # runtime streams:
 # - assistant text -> stdout
 # - event trace (turn/thinking/tool lifecycle) -> stderr
@@ -95,7 +99,11 @@ dotnet run --project Sharp.Cli -- repl
   - `openai-completions`
   - `openai-responses`
   - `anthropic-messages`
+  - `google-gemini-cli`
 - `api` is provider-level; model-level `api` is only kept for backward compatibility.
+- Optional per-model metadata:
+  - `capabilities` (`supportsReasoning`, `supportsImageInput`, `supportsToolCall`)
+  - `pricing` (`inputPerMillionTokens`, `outputPerMillionTokens`, `cacheReadPerMillionTokens`, `cacheWritePerMillionTokens`)
 - For `openai-completions`, optional per-model `compat` flags are supported, including:
   - `supportsStore`, `supportsDeveloperRole`, `supportsReasoningEffort`
   - `supportsUsageInStreaming`, `supportsStrictMode`
@@ -104,9 +112,29 @@ dotnet run --project Sharp.Cli -- repl
   - `openRouterRouting`, `vercelGatewayRouting`
 - If `openai-completions` `compat` is omitted, SharpAgent infers known defaults from provider/baseUrl; explicit compat fields take precedence.
 - API key/base URL can be injected by environment variables:
-  - `SHARP_<PROVIDER_ID>_API_KEY`, `SHARP_<PROVIDER_ID>_BASE_URL`
-  - `<PROVIDER_ID>_API_KEY`, `<PROVIDER_ID>_BASE_URL`
-  - compatibility aliases for canonical provider ids only: `OPENAI_*`, `ANTHROPIC_*`
+  - `SHARP_<PROVIDER_ID>_API_KEY`, `SHARP_<PROVIDER_ID>_ACCESS_TOKEN`, `SHARP_<PROVIDER_ID>_OAUTH_TOKEN`, `SHARP_<PROVIDER_ID>_BASE_URL`
+  - `<PROVIDER_ID>_API_KEY`, `<PROVIDER_ID>_ACCESS_TOKEN`, `<PROVIDER_ID>_OAUTH_TOKEN`, `<PROVIDER_ID>_BASE_URL`
+  - compatibility aliases for canonical provider ids only: `OPENAI_*`, `ANTHROPIC_*`, `KIMI_*`
+  - antigravity alias: `ANTIGRAVITY_ACCESS_TOKEN`, `ANTIGRAVITY_BASE_URL`
+  - provider-specific API key aliases: `HF_TOKEN`, `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`
+  - credential headers are resolved per request, so token rotation via environment variables is picked up without process restart
+  - `*_ACCESS_TOKEN` / `*_OAUTH_TOKEN` also accepts JSON envelope values (`token`/`access_token`/`access` + optional `expires_at`/`expires`/`expires_in`)
+  - for `google-antigravity`, include `projectId` in the token envelope
+    - minimal: `{"token":"...","projectId":"..."}`
+    - refreshable: `{"access":"...","refresh":"...","expires":<oauth-expiry-unix-ms>,"projectId":"..."}`
+- Current built-in `google-antigravity` models include:
+  - `gemini-3-pro-high`
+  - `gemini-3-pro-low`
+  - `gemini-3-flash`
+  - `claude-sonnet-4-5`
+  - `claude-sonnet-4-5-thinking`
+  - `claude-opus-4-5-thinking`
+  - `claude-opus-4-6-thinking`
+  - `gpt-oss-120b-medium`
+- Pi-aligned built-in provider subset is generated from `https://models.dev/api.json` via
+  `node scripts/generate-pi-builtin-providers.mjs`.
+  In offline/sandboxed environments, use `--input-file scripts/fixtures/models.dev.pi-subset.sample.json`.
+  This generator is intentionally scoped to the curated pi-aligned subset, not the full models.dev catalog.
 
 ## Current Scope
 

@@ -33,18 +33,55 @@ public sealed class AgentConfigurationService
 
     public AgentConfig Config { get; }
 
-    public static AgentConfigurationService LoadFromFile(string path)
+    public static AgentConfigurationService LoadFromFile(string? path = null)
     {
-        if (!File.Exists(path))
-            return new AgentConfigurationService(ApplyEnvironmentOverrides(new AgentConfig()));
+        // If a specific path is provided, try only that
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            return TryLoadFromPath(path) ?? new AgentConfigurationService(ApplyEnvironmentOverrides(new AgentConfig()));
+        }
 
-        var json = File.ReadAllText(path);
-        var config = JsonSerializer.Deserialize<AgentConfig>(json, JsonOptions) ?? new AgentConfig();
-        return new AgentConfigurationService(ApplyEnvironmentOverrides(config));
+        // Try CWD first, then agent dir
+        var cwdConfig = Path.Combine(Directory.GetCurrentDirectory(), "config.json");
+        var agentDirConfig = Path.Combine(DefaultAgentDirectory(), "config.json");
+
+        // Try CWD
+        var result = TryLoadFromPath(cwdConfig);
+        if (result != null) return result;
+
+        // Try agent directory
+        result = TryLoadFromPath(agentDirConfig);
+        if (result != null) return result;
+
+        // Fall back to default empty config
+        return new AgentConfigurationService(ApplyEnvironmentOverrides(new AgentConfig()));
     }
 
-    public AgentConfigValidationResult ValidateConfig()
+    private static AgentConfigurationService? TryLoadFromPath(string path)
     {
+        if (!File.Exists(path))
+            return null;
+
+        try
+        {
+            var json = File.ReadAllText(path);
+            var config = JsonSerializer.Deserialize<AgentConfig>(json, JsonOptions);
+            if (config != null)
+            {
+                return new AgentConfigurationService(ApplyEnvironmentOverrides(config));
+            }
+        }
+        catch
+        {
+            // Config file exists but is invalid - will try next location
+        }
+
+        return null;
+    }
+
+    public AgentConfigValidationResult ValidateConfig(string? agentDirectory = null)
+    {
+        var resolvedAgentDirectory = agentDirectory ?? DefaultAgentDirectory();
         var errors = new List<string>();
         var warnings = new List<string>();
 
@@ -127,11 +164,11 @@ public sealed class AgentConfigurationService
                 $"defaultModel '{Config.DefaultModel}' points to missing model '{defaultModelId}' under provider '{defaultProviderId}'.");
         }
 
-        if (string.IsNullOrWhiteSpace(ResolveProviderApiKey(defaultProvider)))
+        if (string.IsNullOrWhiteSpace(ResolveProviderApiKey(defaultProvider, resolvedAgentDirectory)))
         {
             errors.Add(
                 $"Missing API key for defaultModel provider '{defaultProviderId}'. " +
-                $"Configure providers[].apiKey or set one of: {string.Join(", ", GetProviderApiKeyEnvironmentVariableCandidates(defaultProvider))}.");
+                $"{BuildCredentialGuidance(defaultProvider, resolvedAgentDirectory)}");
         }
 
         return new AgentConfigValidationResult(errors, warnings);
@@ -166,6 +203,7 @@ public sealed class AgentConfigurationService
         Action<string>? onDebugLog = null)
     {
         modelString ??= Config.DefaultModel;
+        var resolvedAgentDirectory = agentDirectory ?? DefaultAgentDirectory();
 
         var (providerId, modelId) = ParseModelString(modelString);
         var provider = Config.Providers.FirstOrDefault(p =>
@@ -179,32 +217,44 @@ public sealed class AgentConfigurationService
         // Prefer provider-level API format, keep legacy model-level override for compatibility.
         var apiFormat = model.Api ?? provider.Api;
 
-        var apiKey = ResolveProviderApiKey(provider);
+        var apiKey = ResolveProviderApiKey(provider, resolvedAgentDirectory);
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             throw new InvalidOperationException(
-                $"Missing API key for provider '{providerId}'. Configure providers[].apiKey or set one of: " +
-                $"{string.Join(", ", GetProviderApiKeyEnvironmentVariableCandidates(provider))}.");
+                $"Missing API key for provider '{providerId}'. {BuildCredentialGuidance(provider, resolvedAgentDirectory)}");
         }
 
         var baseUrl = ResolveProviderBaseUrl(provider);
+        var providerApiKind = AgentConfig.ToProviderApiKind(apiFormat);
+        var modelCapabilities = AgentConfig.ToModelCapabilities(apiFormat, model.Capabilities);
+        var modelPricing = AgentConfig.ToModelPricing(model.Pricing);
+        var credentialCandidates = GetProviderCredentialEnvironmentVariableCandidates(provider);
+        ILlmBearerTokenSource tokenSource = provider.Id.Equals("google-antigravity", StringComparison.OrdinalIgnoreCase)
+            ? new AntigravityBearerTokenSource(credentialCandidates, fallbackToken: apiKey)
+            : new EnvironmentVariableBearerTokenSource(credentialCandidates, fallbackToken: apiKey);
 
         return new AgentRuntimeOptions
         {
             Model = new ModelDescriptor(
                 ProviderId: provider.Id,
                 ModelId: model.Id,
-                ApiKind: AgentConfig.ToProviderApiKind(apiFormat),
+                ApiKind: providerApiKind,
                 ContextWindow: model.ContextWindow,
                 MaxOutputTokens: model.MaxOutputTokens,
                 OpenAiCompletionsCompat: apiFormat == ModelApiFormat.OpenAiCompletions
                     ? OpenAiCompatResolver.ResolveCompletionsCompat(provider.Id, baseUrl, model.Compat)
-                    : null),
+                    : null,
+                Capabilities: modelCapabilities,
+                Pricing: modelPricing),
             ApiKey = apiKey,
+            CredentialProvider = new CachingBearerCredentialProvider(
+                providerApiKind,
+                tokenSource,
+                cacheTokensWithoutExpiry: false),
             BaseUrl = baseUrl,
             WorkingDirectory = workingDirectory ?? Directory.GetCurrentDirectory(),
             SessionDirectory = sessionDirectory ?? DefaultSessionDirectory(),
-            AgentDirectory = agentDirectory ?? DefaultAgentDirectory(),
+            AgentDirectory = resolvedAgentDirectory,
             ThinkingLevel = thinkingLevel,
             SystemPrompt = systemPrompt ??
                            "You are a coding agent. Work precisely, call tools when needed, and verify intermediate results.",
@@ -255,11 +305,19 @@ public sealed class AgentConfigurationService
         return Path.Combine(home, ".sharp");
     }
 
+    public static string DefaultAuthStorePath(string? agentDirectory = null)
+    {
+        var resolvedAgentDirectory = string.IsNullOrWhiteSpace(agentDirectory)
+            ? DefaultAgentDirectory()
+            : agentDirectory!;
+        return Path.Combine(resolvedAgentDirectory, "auth.json");
+    }
+
     private static AgentConfig ApplyEnvironmentOverrides(AgentConfig config)
     {
         foreach (var provider in config.Providers)
         {
-            provider.ApiKey = ResolveProviderApiKey(provider);
+            provider.ApiKey = ResolveProviderApiKeyFromEnvironmentOrConfig(provider);
             provider.BaseUrl = ResolveProviderBaseUrl(provider);
         }
 
@@ -290,8 +348,52 @@ public sealed class AgentConfigurationService
     private static string ResolveProviderBaseUrl(ProviderConfig provider)
         => ResolveProviderValue(provider.BaseUrl, GetProviderBaseUrlEnvironmentVariableCandidates(provider));
 
-    private static string? ResolveProviderApiKey(ProviderConfig provider)
-        => ResolveProviderValue(provider.ApiKey, GetProviderApiKeyEnvironmentVariableCandidates(provider));
+    private static string? ResolveProviderApiKey(ProviderConfig provider, string agentDirectory)
+    {
+        var fromEnvironment = ResolveProviderValue(string.Empty, GetProviderCredentialEnvironmentVariableCandidates(provider));
+        if (!string.IsNullOrWhiteSpace(fromEnvironment))
+            return fromEnvironment;
+
+        var fromOAuthStore = ResolveProviderApiKeyFromOAuthStore(provider, agentDirectory);
+        if (!string.IsNullOrWhiteSpace(fromOAuthStore))
+            return fromOAuthStore;
+
+        return provider.ApiKey ?? string.Empty;
+    }
+
+    private static string? ResolveProviderApiKeyFromEnvironmentOrConfig(ProviderConfig provider)
+        => ResolveProviderValue(provider.ApiKey, GetProviderCredentialEnvironmentVariableCandidates(provider));
+
+    private static string? ResolveProviderApiKeyFromOAuthStore(ProviderConfig provider, string agentDirectory)
+    {
+        if (!IsOAuthProvider(provider))
+            return null;
+
+        var authStorePath = DefaultAuthStorePath(agentDirectory);
+        var authStore = OAuthCredentialStore.LoadFromFile(authStorePath);
+        return authStore.TryGetCredential(provider.Id, out var credential) ? credential : null;
+    }
+
+    private static IReadOnlyList<string> GetProviderCredentialEnvironmentVariableCandidates(ProviderConfig provider)
+    {
+        var candidates = new List<string>();
+        var unique = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void AddRange(IReadOnlyList<string> values)
+        {
+            foreach (var value in values)
+            {
+                if (unique.Add(value))
+                    candidates.Add(value);
+            }
+        }
+
+        AddRange(GetProviderApiKeyEnvironmentVariableCandidates(provider));
+        AddRange(BuildProviderEnvironmentVariableCandidates(provider, "ACCESS_TOKEN"));
+        AddRange(BuildProviderEnvironmentVariableCandidates(provider, "OAUTH_TOKEN"));
+
+        return candidates;
+    }
 
     private static string ResolveProviderValue(
         string? configuredValue,
@@ -338,6 +440,30 @@ public sealed class AgentConfigurationService
             Add($"ANTHROPIC_{suffix}");
         }
 
+        if (provider.Id.Equals("kimi-coding", StringComparison.OrdinalIgnoreCase))
+        {
+            Add($"KIMI_{suffix}");
+        }
+
+        if (provider.Id.Equals("google-antigravity", StringComparison.OrdinalIgnoreCase))
+        {
+            Add($"ANTIGRAVITY_{suffix}");
+        }
+
+        if (provider.Id.Equals("huggingface", StringComparison.OrdinalIgnoreCase) &&
+            suffix.Equals("API_KEY", StringComparison.Ordinal))
+        {
+            Add("HF_TOKEN");
+        }
+
+        if (provider.Id.Equals("github-copilot", StringComparison.OrdinalIgnoreCase) &&
+            suffix.Equals("API_KEY", StringComparison.Ordinal))
+        {
+            Add("COPILOT_GITHUB_TOKEN");
+            Add("GH_TOKEN");
+            Add("GITHUB_TOKEN");
+        }
+
         return candidates;
     }
 
@@ -366,5 +492,20 @@ public sealed class AgentConfigurationService
 
         var normalized = builder.ToString().Trim('_');
         return string.IsNullOrWhiteSpace(normalized) ? "PROVIDER" : normalized;
+    }
+
+    private static bool IsOAuthProvider(ProviderConfig provider)
+        => provider.Id.Equals("google-antigravity", StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildCredentialGuidance(ProviderConfig provider, string agentDirectory)
+    {
+        var envCandidates = string.Join(", ", GetProviderCredentialEnvironmentVariableCandidates(provider));
+        if (IsOAuthProvider(provider))
+        {
+            return $"Run OAuth login to populate '{DefaultAuthStorePath(agentDirectory)}', " +
+                   $"configure providers[].apiKey, or set one of: {envCandidates}.";
+        }
+
+        return $"Configure providers[].apiKey or set one of: {envCandidates}.";
     }
 }

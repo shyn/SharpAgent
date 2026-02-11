@@ -52,4 +52,24 @@ public sealed class SessionManagerTests : IDisposable
         var branchA = manager.GetBranch(second.Id);
         Assert.Equal(2, branchA.Count);
     }
+
+    [Fact]
+    public async Task AppendAndLoad_RoundTripsAssistantStopReasonAndErrorMessage()
+    {
+        var manager = await SessionManager.CreateAsync(_tempDir, _tempDir);
+        await manager.AppendMessageAsync(new LlmMessage(
+            LlmMessageRole.Assistant,
+            [new TextContentBlock("partial")],
+            StopReason: LlmStopReason.Error,
+            ErrorMessage: "provider-failed"));
+
+        var loaded = await SessionManager.LoadAsync(manager.SessionFilePath);
+        var context = loaded.RebuildContext();
+
+        var assistant = Assert.Single(context);
+        Assert.Equal(LlmMessageRole.Assistant, assistant.Role);
+        Assert.Equal(LlmStopReason.Error, assistant.StopReason);
+        Assert.Equal("provider-failed", assistant.ErrorMessage);
+        Assert.Equal("partial", Assert.IsType<TextContentBlock>(assistant.Content[0]).Text);
+    }
 }

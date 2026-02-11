@@ -171,6 +171,23 @@ public sealed class AgentLoop
                         toolCalls = completedEvent.ToolCalls.ToList();
                         break;
                     case LlmErrorEvent errorEvent:
+                        var errorAssistantBlocks = new List<ContentBlock>();
+                        if (thinkingBuilder.Length > 0)
+                            errorAssistantBlocks.Add(new ThinkingContentBlock(thinkingBuilder.ToString()));
+                        if (textBuilder.Length > 0)
+                            errorAssistantBlocks.Add(new TextContentBlock(textBuilder.ToString()));
+
+                        var errorStopReason = errorEvent.Category == LlmErrorCategory.Aborted
+                            ? LlmStopReason.Aborted
+                            : LlmStopReason.Error;
+                        var errorAssistantMessage = new LlmMessage(
+                            LlmMessageRole.Assistant,
+                            errorAssistantBlocks,
+                            StopReason: errorStopReason,
+                            ErrorMessage: errorEvent.Message);
+
+                        conversation.Add(errorAssistantMessage);
+                        await appendMessage(errorAssistantMessage, CancellationToken.None);
                         yield return new AgentErrorEvent(errorEvent.Message, errorEvent.Category, errorEvent.StatusCode, errorEvent.Retryable);
                         yield break;
                 }
@@ -178,6 +195,20 @@ public sealed class AgentLoop
 
             if (completed == null)
             {
+                var streamErrorAssistantBlocks = new List<ContentBlock>();
+                if (thinkingBuilder.Length > 0)
+                    streamErrorAssistantBlocks.Add(new ThinkingContentBlock(thinkingBuilder.ToString()));
+                if (textBuilder.Length > 0)
+                    streamErrorAssistantBlocks.Add(new TextContentBlock(textBuilder.ToString()));
+
+                var streamErrorMessage = "Provider stream ended without a completion event";
+                var streamErrorAssistantMessage = new LlmMessage(
+                    LlmMessageRole.Assistant,
+                    streamErrorAssistantBlocks,
+                    StopReason: LlmStopReason.Error,
+                    ErrorMessage: streamErrorMessage);
+                conversation.Add(streamErrorAssistantMessage);
+                await appendMessage(streamErrorAssistantMessage, CancellationToken.None);
                 yield return new AgentErrorEvent("Provider stream ended without a completion event");
                 yield break;
             }
@@ -193,7 +224,10 @@ public sealed class AgentLoop
                 assistantBlocks.Add(new TextContentBlock(fullText));
             assistantBlocks.AddRange(toolCalls.Select(tc => new ToolCallContentBlock(tc.Id, tc.Name, tc.ArgumentsJson, tc.Signature)));
 
-            var assistantMessage = new LlmMessage(LlmMessageRole.Assistant, assistantBlocks);
+            var assistantMessage = new LlmMessage(
+                LlmMessageRole.Assistant,
+                assistantBlocks,
+                StopReason: completed.StopReason);
             conversation.Add(assistantMessage);
             await appendMessage(assistantMessage, ct);
 

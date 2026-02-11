@@ -1,21 +1,26 @@
 {
-  "defaultModel": "antigravity/gemini-3-flash",
+  "defaultModel": "google-antigravity/gemini-3-flash",
   "providers": [
     {
-      "id": "antigravity",
-      "api": "openai-completions",
-      "apiKey": "dummy",
-      "baseUrl": "http://localhost:8045/v1/",
+      "id": "google-antigravity",
+      "api": "google-gemini-cli",
+      "apiKey": "{\"access\":\"<oauth-access-token>\",\"refresh\":\"<oauth-refresh-token>\",\"expires\":<oauth-expiry-unix-ms>,\"projectId\":\"<google-project-id>\"}",
+      "baseUrl": "https://daily-cloudcode-pa.sandbox.googleapis.com/",
       "models": [
         {
-          "id": "opus-4-5",
-          "contextWindow": 256000,
-          "maxOutputTokens": 16384
+          "id": "gemini-3-flash",
+          "contextWindow": 1048576,
+          "maxOutputTokens": 65535
         },
         {
-          "id": "gemini-3-flash",
-          "contextWindow": 1024000,
-          "maxOutputTokens": 16384
+          "id": "claude-opus-4-6-thinking",
+          "contextWindow": 200000,
+          "maxOutputTokens": 128000
+        },
+        {
+          "id": "claude-sonnet-4-5-thinking",
+          "contextWindow": 200000,
+          "maxOutputTokens": 64000
         }
       ]
     },
@@ -29,6 +34,16 @@
           "id": "gpt-4o-mini",
           "contextWindow": 128000,
           "maxOutputTokens": 16384,
+          "capabilities": {
+            "supportsReasoning": true,
+            "supportsImageInput": true,
+            "supportsToolCall": true
+          },
+          "pricing": {
+            "inputPerMillionTokens": 0.15,
+            "outputPerMillionTokens": 0.6,
+            "cacheReadPerMillionTokens": 0.075
+          },
           "compat": {
             "supportsStore": true,
             "supportsDeveloperRole": true,
@@ -62,6 +77,24 @@
           "id": "claude-sonnet-4-20250514",
           "contextWindow": 200000,
           "maxOutputTokens": 8192
+        }
+      ]
+    },
+    {
+      "id": "kimi-coding",
+      "api": "anthropic-messages",
+      "apiKey": null,
+      "baseUrl": "https://api.kimi.com/coding/v1/",
+      "models": [
+        {
+          "id": "k2p5",
+          "contextWindow": 262144,
+          "maxOutputTokens": 32768
+        },
+        {
+          "id": "kimi-k2-thinking",
+          "contextWindow": 262144,
+          "maxOutputTokens": 32768
         }
       ]
     }

@@ -1,0 +1,205 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Sharp.Gui.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="500"
+             x:Class="Sharp.Gui.Views.ChatView"
+             x:DataType="vm:ChatViewModel">
+
+    <DockPanel Background="#0f0f23">
+        <!-- Input Area -->
+        <Border DockPanel.Dock="Bottom"
+                Background="#1a1a2e"
+                Padding="12"
+                BorderThickness="0,1,0,0"
+                BorderBrush="#2d2d4a">
+            <DockPanel>
+                <!-- Cancel Button -->
+                <Button DockPanel.Dock="Right"
+                        Content="✕"
+                        Command="{Binding CancelCommand}"
+                        IsVisible="{Binding IsProcessing}"
+                        Margin="8,0,0,0"
+                        Padding="10,8"
+                        Background="#7f1d1d"
+                        Foreground="#fca5a5"
+                        CornerRadius="8"
+                        VerticalAlignment="Bottom"/>
+
+                <!-- Send Button -->
+                <Button DockPanel.Dock="Right"
+                        Content="Send"
+                        Command="{Binding SendCommand}"
+                        Margin="8,0,0,0"
+                        Padding="16,8"
+                        Background="#3b82f6"
+                        Foreground="White"
+                        CornerRadius="8"
+                        FontWeight="SemiBold"
+                        VerticalAlignment="Bottom"/>
+
+                <!-- Input TextBox -->
+                <TextBox x:Name="InputTextBox"
+                         Text="{Binding InputText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                         Watermark="Type your message... (Enter for new line, Shift+Enter to send)"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         MaxHeight="120"
+                         Background="#16213e"
+                         Foreground="#e2e8f0"
+                         CornerRadius="8"
+                         Padding="12,8"
+                         BorderBrush="#2d2d4a"
+                         BorderThickness="1"
+                         FontSize="14"/>
+            </DockPanel>
+        </Border>
+
+        <!-- Messages List -->
+        <ScrollViewer x:Name="MessageScrollViewer"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding Messages}"
+                          Padding="16,12">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:ChatMessageViewModel">
+                        <Panel>
+                            <!-- Tool Call Card -->
+                            <Border IsVisible="{Binding ShowAsToolCard}"
+                                    Margin="0,6"
+                                    Background="#1a1a2e"
+                                    BorderBrush="#2d3748"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    MaxWidth="600"
+                                    BoxShadow="0 2 8 0 #00000040">
+                                <DockPanel>
+                                    <!-- Tool Header (Click to expand/collapse) -->
+                                    <Button DockPanel.Dock="Top"
+                                            Command="{Binding ToggleCollapseCommand}"
+                                            Background="#111827"
+                                            Padding="12,10"
+                                            CornerRadius="8,8,0,0"
+                                            HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Stretch">
+                                        <DockPanel>
+                                            <!-- Expand/Collapse Icon -->
+                                            <TextBlock DockPanel.Dock="Right"
+                                                       Text="{Binding IsCollapsed, Converter={StaticResource BoolToExpandIconConverter}}"
+                                                       Foreground="#6b7280"
+                                                       FontSize="12"
+                                                       VerticalAlignment="Center"
+                                                       Margin="8,0,0,0"/>
+
+                                            <!-- Status Indicator -->
+                                            <StackPanel DockPanel.Dock="Left"
+                                                        Orientation="Horizontal"
+                                                        Spacing="8"
+                                                        VerticalAlignment="Center">
+                                                <!-- Tool Icon -->
+                                                <TextBlock Text="🔧"
+                                                           FontSize="14"
+                                                           VerticalAlignment="Center"/>
+
+                                                <!-- Tool Name -->
+                                                <TextBlock Text="{Binding ToolName}"
+                                                           FontFamily="Consolas, Monaco, monospace"
+                                                           FontSize="13"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="#e5e7eb"
+                                                           VerticalAlignment="Center"/>
+
+                                                <!-- Status Badge -->
+                                                <Border CornerRadius="4"
+                                                        Padding="6,2"
+                                                        VerticalAlignment="Center">
+                                                    <Border.Background>
+                                                        <SolidColorBrush Color="{Binding ToolStatusColor, Converter={StaticResource BrushToTransparentBrushConverter}}"/>
+                                                    </Border.Background>
+                                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                                        <TextBlock Text="{Binding ToolStatusIcon}"
+                                                                   Foreground="{Binding ToolStatusBrush}"
+                                                                   FontSize="10"
+                                                                   VerticalAlignment="Center"/>
+                                                        <TextBlock Text="{Binding ToolStatusText}"
+                                                                   Foreground="{Binding ToolStatusBrush}"
+                                                                   FontSize="10"
+                                                                   FontWeight="Medium"
+                                                                   VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Button>
+
+                                    <!-- Tool Content (Expandable) -->
+                                    <Border IsVisible="{Binding IsExpanded}"
+                                            Padding="12,10"
+                                            Background="#0f172a">
+                                        <TextBox Text="{Binding Content}"
+                                                 IsReadOnly="True"
+                                                 TextWrapping="Wrap"
+                                                 FontFamily="Consolas, Monaco, monospace"
+                                                 FontSize="12"
+                                                 LineHeight="18"
+                                                 Foreground="#9ca3af"
+                                                 Background="Transparent"
+                                                 BorderThickness="0"
+                                                 Padding="0"
+                                                 CaretBrush="#9ca3af"
+                                                 SelectionBrush="#3b82f6"
+                                                 SelectionForegroundBrush="White"/>
+                                    </Border>
+                                </DockPanel>
+                            </Border>
+
+                            <!-- Regular Message Bubble -->
+                            <Border IsVisible="{Binding !ShowAsToolCard}"
+                                    Margin="0,4"
+                                    Padding="12,8"
+                                    CornerRadius="10"
+                                    MaxWidth="680"
+                                    HorizontalAlignment="{Binding IsUser, Converter={StaticResource BoolToAlignmentConverter}}"
+                                    Background="{Binding IsUser, Converter={StaticResource BoolToBrushConverter}}">
+
+                                <DockPanel>
+                                    <!-- Role Label + Streaming Indicator -->
+                                    <StackPanel DockPanel.Dock="Top"
+                                                Orientation="Horizontal"
+                                                HorizontalAlignment="{Binding IsUser, Converter={StaticResource BoolToAlignmentConverter}}"
+                                                Margin="0,0,0,4">
+                                        <TextBlock Text="{Binding RoleLabel}"
+                                                   Foreground="{Binding RoleColor}"
+                                                   FontSize="11"
+                                                   FontWeight="SemiBold"
+                                                   Opacity="0.9"/>
+                                        <TextBlock Text=" ●"
+                                                   IsVisible="{Binding IsStreaming}"
+                                                   Foreground="#22d3ee"
+                                                   FontSize="11"/>
+                                    </StackPanel>
+
+                                    <!-- Content -->
+                                    <TextBox Text="{Binding Content}"
+                                              IsReadOnly="True"
+                                              TextWrapping="Wrap"
+                                              FontSize="14"
+                                              LineHeight="22"
+                                              Foreground="#e2e8f0"
+                                              Background="Transparent"
+                                              BorderThickness="0"
+                                              Padding="0"
+                                              CaretBrush="#e2e8f0"
+                                              SelectionBrush="#3b82f6"
+                                              SelectionForegroundBrush="White"/>
+                                </DockPanel>
+                            </Border>
+                        </Panel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </DockPanel>
+
+</UserControl>

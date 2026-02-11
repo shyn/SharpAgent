@@ -106,6 +106,64 @@ public sealed class LlmProviderMappingTests
     }
 
     [Fact]
+    public async Task GoogleAntigravityProvider_MapsRequestAndParsesThinkingTools()
+    {
+        var sse = string.Join(
+            "\n",
+            [
+                "data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"plan\",\"thought\":true,\"thoughtSignature\":\"c2ln\"},{\"text\":\"answer\"},{\"functionCall\":{\"id\":\"call@1\",\"name\":\"read\",\"args\":{\"path\":\"README.md\"}}}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":20,\"cachedContentTokenCount\":5,\"candidatesTokenCount\":6,\"thoughtsTokenCount\":2}}}"
+            ]);
+
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(sse, Encoding.UTF8, "text/event-stream")
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://daily-cloudcode-pa.sandbox.googleapis.com/")
+        };
+
+        using var provider = new GoogleAntigravityLlmProvider(httpClient, "proj-42");
+        var request = new LlmRequest(
+            Model: new ModelDescriptor("google-antigravity", "gemini-3-flash", ProviderApiKind.GoogleGeminiCli),
+            SystemPrompt: "system",
+            Messages: [LlmMessage.UserText("hello")],
+            Tools:
+            [
+                ToolDefinition.FromObject("read", "Read file", new
+                {
+                    type = "object",
+                    properties = new { path = new { type = "string" } },
+                    required = new[] { "path" }
+                })
+            ]);
+
+        var events = await CollectAsync(provider.StreamAsync(request));
+        Assert.Contains(events, e => e is LlmThinkingStartedEvent);
+        Assert.Contains(events, e => e is LlmThinkingDeltaEvent delta && delta.Delta == "plan");
+        Assert.Contains(events, e => e is LlmTextDeltaEvent delta && delta.Delta == "answer");
+        Assert.Contains(events, e => e is LlmToolUseStartedEvent start && start.ToolName == "read");
+
+        var completed = Assert.IsType<LlmCompletedEvent>(events.Last());
+        Assert.Equal("answer", completed.FullText);
+        Assert.Equal("plan", completed.FullThinking);
+        Assert.Single(completed.ToolCalls);
+        Assert.Equal("{\"path\":\"README.md\"}", completed.ToolCalls[0].ArgumentsJson);
+        Assert.Equal(LlmStopReason.ToolUse, completed.StopReason);
+        Assert.Equal(15, completed.Usage!.InputTokens);
+        Assert.Equal(8, completed.Usage.OutputTokens);
+        Assert.Equal(5, completed.Usage.CacheReadTokens);
+
+        Assert.NotNull(handler.LastRequestBody);
+        Assert.Contains("\"requestType\":\"agent\"", handler.LastRequestBody);
+        Assert.Contains("\"userAgent\":\"antigravity\"", handler.LastRequestBody);
+        Assert.Contains("\"project\":\"proj-42\"", handler.LastRequestBody);
+        Assert.Contains("\"role\":\"user\"", handler.LastRequestBody);
+        Assert.Contains("\"functionDeclarations\"", handler.LastRequestBody);
+    }
+
+    [Fact]
     public async Task OpenAiProvider_OrphanToolCall_IsBackfilledWithSyntheticToolResult()
     {
         var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
@@ -240,6 +298,138 @@ public sealed class LlmProviderMappingTests
             .SelectMany(item => item.GetProperty("content").EnumerateArray())
             .First(item => item.GetProperty("type").GetString() == "tool_result");
         Assert.Equal(normalizedId, toolResult.GetProperty("tool_use_id").GetString());
+    }
+
+    [Fact]
+    public async Task OpenAiProvider_DropsAbortedAssistantTurnBeforeReplay()
+    {
+        const string callId = "call_abort";
+
+        var payload = await CaptureOpenAiPayloadAsync(
+            providerId: "openai",
+            baseUrl: "https://api.openai.com/v1/",
+            messages:
+            [
+                LlmMessage.UserText("run"),
+                new LlmMessage(
+                    LlmMessageRole.Assistant,
+                    [new ToolCallContentBlock(callId, "read", "{\"path\":\"README.md\"}")],
+                    StopReason: LlmStopReason.Aborted),
+                new LlmMessage(
+                    LlmMessageRole.Tool,
+                    [new ToolResultContentBlock(callId, "read", "stale", false)]),
+                LlmMessage.UserText("continue")
+            ]);
+
+        var messages = payload.GetProperty("messages").EnumerateArray().ToArray();
+        Assert.DoesNotContain(
+            messages,
+            item => item.GetProperty("role").GetString() == "assistant"
+                    && item.TryGetProperty("tool_calls", out var toolCalls)
+                    && toolCalls.EnumerateArray().Any(tc => tc.GetProperty("id").GetString() == callId));
+        Assert.DoesNotContain(
+            messages,
+            item => item.GetProperty("role").GetString() == "tool"
+                    && item.GetProperty("tool_call_id").GetString() == callId);
+    }
+
+    [Fact]
+    public async Task AnthropicProvider_DropsAbortedAssistantTurnBeforeReplay()
+    {
+        const string callId = "call_abort";
+
+        var payload = await CaptureAnthropicPayloadAsync(
+            messages:
+            [
+                LlmMessage.UserText("run"),
+                new LlmMessage(
+                    LlmMessageRole.Assistant,
+                    [new ToolCallContentBlock(callId, "read", "{\"path\":\"README.md\"}")],
+                    StopReason: LlmStopReason.Aborted),
+                new LlmMessage(
+                    LlmMessageRole.Tool,
+                    [new ToolResultContentBlock(callId, "read", "stale", false)]),
+                LlmMessage.UserText("continue")
+            ]);
+
+        var messages = payload.GetProperty("messages").EnumerateArray().ToArray();
+        Assert.DoesNotContain(
+            messages,
+            item => item.GetProperty("role").GetString() == "assistant"
+                    && item.GetProperty("content").EnumerateArray().Any(content =>
+                        content.GetProperty("type").GetString() == "tool_use"
+                        && content.GetProperty("id").GetString() == callId));
+        Assert.DoesNotContain(
+            messages.Where(item => item.GetProperty("role").GetString() == "user"),
+            item => item.GetProperty("content").EnumerateArray().Any(content =>
+                content.GetProperty("type").GetString() == "tool_result"
+                && content.GetProperty("tool_use_id").GetString() == callId));
+    }
+
+    [Fact]
+    public async Task OpenAiProvider_DropsLegacyErroredAssistantTurnWithoutStopReason()
+    {
+        const string callId = "call_legacy_error";
+
+        var payload = await CaptureOpenAiPayloadAsync(
+            providerId: "openai",
+            baseUrl: "https://api.openai.com/v1/",
+            messages:
+            [
+                LlmMessage.UserText("run"),
+                new LlmMessage(
+                    LlmMessageRole.Assistant,
+                    [new ToolCallContentBlock(callId, "read", "{\"path\":\"README.md\"}")],
+                    ErrorMessage: "legacy stream interrupted"),
+                new LlmMessage(
+                    LlmMessageRole.Tool,
+                    [new ToolResultContentBlock(callId, "read", "stale", false)]),
+                LlmMessage.UserText("continue")
+            ]);
+
+        var messages = payload.GetProperty("messages").EnumerateArray().ToArray();
+        Assert.DoesNotContain(
+            messages,
+            item => item.GetProperty("role").GetString() == "assistant"
+                    && item.TryGetProperty("tool_calls", out var toolCalls)
+                    && toolCalls.EnumerateArray().Any(tc => tc.GetProperty("id").GetString() == callId));
+        Assert.DoesNotContain(
+            messages,
+            item => item.GetProperty("role").GetString() == "tool"
+                    && item.GetProperty("tool_call_id").GetString() == callId);
+    }
+
+    [Fact]
+    public async Task AnthropicProvider_DropsLegacyErroredAssistantTurnWithoutStopReason()
+    {
+        const string callId = "call_legacy_error";
+
+        var payload = await CaptureAnthropicPayloadAsync(
+            messages:
+            [
+                LlmMessage.UserText("run"),
+                new LlmMessage(
+                    LlmMessageRole.Assistant,
+                    [new ToolCallContentBlock(callId, "read", "{\"path\":\"README.md\"}")],
+                    ErrorMessage: "legacy stream interrupted"),
+                new LlmMessage(
+                    LlmMessageRole.Tool,
+                    [new ToolResultContentBlock(callId, "read", "stale", false)]),
+                LlmMessage.UserText("continue")
+            ]);
+
+        var messages = payload.GetProperty("messages").EnumerateArray().ToArray();
+        Assert.DoesNotContain(
+            messages,
+            item => item.GetProperty("role").GetString() == "assistant"
+                    && item.GetProperty("content").EnumerateArray().Any(content =>
+                        content.GetProperty("type").GetString() == "tool_use"
+                        && content.GetProperty("id").GetString() == callId));
+        Assert.DoesNotContain(
+            messages.Where(item => item.GetProperty("role").GetString() == "user"),
+            item => item.GetProperty("content").EnumerateArray().Any(content =>
+                content.GetProperty("type").GetString() == "tool_result"
+                && content.GetProperty("tool_use_id").GetString() == callId));
     }
 
     [Fact]
@@ -763,6 +953,59 @@ public sealed class LlmProviderMappingTests
     }
 
     [Fact]
+    public async Task AnthropicProvider_ConvertsOpenAiReasoningSignatureToText()
+    {
+        var sse = string.Join(
+            "\n",
+            [
+                "event: content_block_start",
+                "data: {\"index\":0,\"content_block\":{\"type\":\"text\"}}",
+                "",
+                "event: content_block_delta",
+                "data: {\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}",
+                "",
+                "event: content_block_stop",
+                "data: {\"index\":0}"
+            ]);
+
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(sse, Encoding.UTF8, "text/event-stream")
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://api.anthropic.com/v1/")
+        };
+
+        using var provider = new AnthropicLlmProvider(httpClient);
+
+        var request = new LlmRequest(
+            Model: new ModelDescriptor("anthropic", "claude-sonnet-4-20250514", ProviderApiKind.AnthropicMessages),
+            SystemPrompt: "system",
+            Messages:
+            [
+                LlmMessage.UserText("run tool"),
+                new LlmMessage(
+                    LlmMessageRole.Assistant,
+                    [
+                        new ThinkingContentBlock(
+                            string.Empty,
+                            "{\"type\":\"reasoning\",\"id\":\"rs_1\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}]}")
+                    ])
+            ],
+            Tools: []);
+
+        var events = await CollectAsync(provider.StreamAsync(request));
+        Assert.IsType<LlmCompletedEvent>(events.Last());
+
+        Assert.NotNull(handler.LastRequestBody);
+        Assert.Contains("\"type\":\"text\",\"text\":\"plan\"", handler.LastRequestBody);
+        Assert.DoesNotContain("\"type\":\"thinking\"", handler.LastRequestBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"id\":\"rs_1\"", handler.LastRequestBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AnthropicProvider_ParsesDataOnlySseWithoutEventHeader()
     {
         var sse = string.Join(
@@ -1006,6 +1249,171 @@ public sealed class LlmProviderMappingTests
     }
 
     [Fact]
+    public async Task OpenAiResponsesProvider_ReplaysThinkingSignatureAsReasoningItem()
+    {
+        var sse = string.Join(
+            "\n",
+            [
+                "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}",
+                "data: [DONE]"
+            ]);
+
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(sse, Encoding.UTF8, "text/event-stream")
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://api.openai.com/v1/")
+        };
+
+        using var provider = new OpenAiResponsesLlmProvider(httpClient);
+        var request = new LlmRequest(
+            Model: new ModelDescriptor("openai", "gpt-5-mini", ProviderApiKind.OpenAiResponses),
+            SystemPrompt: "system",
+            Messages:
+            [
+                LlmMessage.UserText("run"),
+                new LlmMessage(
+                    LlmMessageRole.Assistant,
+                    [
+                        new ThinkingContentBlock(
+                            string.Empty,
+                            "{\"type\":\"reasoning\",\"id\":\"rs_1\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}]}"),
+                        new ToolCallContentBlock("call_1", "read", "{\"path\":\"README.md\"}")
+                    ]),
+                new LlmMessage(
+                    LlmMessageRole.Tool,
+                    [new ToolResultContentBlock("call_1", "read", "ok", false)]),
+                LlmMessage.UserText("continue")
+            ],
+            Tools: []);
+
+        var events = await CollectAsync(provider.StreamAsync(request));
+        Assert.IsType<LlmCompletedEvent>(events.Last());
+
+        Assert.NotNull(handler.LastRequestBody);
+        using var json = System.Text.Json.JsonDocument.Parse(handler.LastRequestBody!);
+        var input = json.RootElement.GetProperty("input").EnumerateArray().ToArray();
+
+        Assert.Contains(
+            input,
+            item => item.TryGetProperty("type", out var type) && type.GetString() == "reasoning");
+        Assert.Contains(
+            input,
+            item => item.TryGetProperty("type", out var type) && type.GetString() == "function_call");
+        Assert.Contains(
+            input,
+            item => item.TryGetProperty("type", out var type) && type.GetString() == "function_call_output");
+    }
+
+    [Fact]
+    public async Task OpenAiResponsesProvider_NormalizesWrappedReasoningSignature()
+    {
+        var sse = string.Join(
+            "\n",
+            [
+                "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}",
+                "data: [DONE]"
+            ]);
+
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(sse, Encoding.UTF8, "text/event-stream")
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://api.openai.com/v1/")
+        };
+
+        using var provider = new OpenAiResponsesLlmProvider(httpClient);
+        var request = new LlmRequest(
+            Model: new ModelDescriptor("openai", "gpt-5-mini", ProviderApiKind.OpenAiResponses),
+            SystemPrompt: "system",
+            Messages:
+            [
+                LlmMessage.UserText("run"),
+                new LlmMessage(
+                    LlmMessageRole.Assistant,
+                    [
+                        new ThinkingContentBlock(
+                            string.Empty,
+                            "{\"reasoning\":{\"id\":\"rs_wrap\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}]}}"),
+                        new ToolCallContentBlock("call_1", "read", "{\"path\":\"README.md\"}")
+                    ]),
+                new LlmMessage(
+                    LlmMessageRole.Tool,
+                    [new ToolResultContentBlock("call_1", "read", "ok", false)]),
+                LlmMessage.UserText("continue")
+            ],
+            Tools: []);
+
+        var events = await CollectAsync(provider.StreamAsync(request));
+        Assert.IsType<LlmCompletedEvent>(events.Last());
+
+        Assert.NotNull(handler.LastRequestBody);
+        using var json = System.Text.Json.JsonDocument.Parse(handler.LastRequestBody!);
+        var input = json.RootElement.GetProperty("input").EnumerateArray().ToArray();
+
+        var reasoning = input.Single(item =>
+            item.TryGetProperty("type", out var type) && type.GetString() == "reasoning");
+        Assert.Equal("rs_wrap", reasoning.GetProperty("id").GetString());
+    }
+
+    [Fact]
+    public async Task OpenAiResponsesProvider_SkipsSignatureOnlyAssistantTurn()
+    {
+        var sse = string.Join(
+            "\n",
+            [
+                "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}",
+                "data: [DONE]"
+            ]);
+
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(sse, Encoding.UTF8, "text/event-stream")
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://api.openai.com/v1/")
+        };
+
+        using var provider = new OpenAiResponsesLlmProvider(httpClient);
+        var request = new LlmRequest(
+            Model: new ModelDescriptor("openai", "gpt-5-mini", ProviderApiKind.OpenAiResponses),
+            SystemPrompt: "system",
+            Messages:
+            [
+                LlmMessage.UserText("first"),
+                new LlmMessage(
+                    LlmMessageRole.Assistant,
+                    [
+                        new ThinkingContentBlock(
+                            string.Empty,
+                            "{\"type\":\"reasoning\",\"id\":\"rs_partial\"}")
+                    ]),
+                LlmMessage.UserText("second")
+            ],
+            Tools: []);
+
+        var events = await CollectAsync(provider.StreamAsync(request));
+        Assert.IsType<LlmCompletedEvent>(events.Last());
+
+        Assert.NotNull(handler.LastRequestBody);
+        using var json = System.Text.Json.JsonDocument.Parse(handler.LastRequestBody!);
+        var input = json.RootElement.GetProperty("input").EnumerateArray().ToArray();
+
+        Assert.Equal(3, input.Length); // system + two user messages
+        Assert.DoesNotContain(
+            input,
+            item => item.TryGetProperty("type", out var type) && type.GetString() == "reasoning");
+    }
+
+    [Fact]
     public async Task OpenAiProvider_TooLongRetryAfter_ReturnsRateLimitError()
     {
         var handler = new StubHttpMessageHandler(_ =>
@@ -1035,6 +1443,141 @@ public sealed class LlmProviderMappingTests
         var error = Assert.IsType<LlmErrorEvent>(events.Single());
         Assert.Equal(LlmErrorCategory.RateLimit, error.Category);
         Assert.True(error.Retryable);
+    }
+
+    [Fact]
+    public async Task OpenAiProvider_ContextOverflowBody_MapsContextOverflowError()
+    {
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent(
+                "{\"error\":{\"message\":\"This model's maximum context length is 8192 tokens.\"}}",
+                Encoding.UTF8,
+                "application/json")
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://api.openai.com/v1/")
+        };
+
+        using var provider = new OpenAiLlmProvider(httpClient);
+        var request = new LlmRequest(
+            Model: new ModelDescriptor("openai", "gpt-4o-mini", ProviderApiKind.OpenAiChatCompletions),
+            SystemPrompt: "system",
+            Messages: [LlmMessage.UserText("hello")],
+            Tools: []);
+
+        var events = await CollectAsync(provider.StreamAsync(request));
+        var error = Assert.IsType<LlmErrorEvent>(events.Single());
+        Assert.Equal(LlmErrorCategory.ContextOverflow, error.Category);
+        Assert.False(error.Retryable);
+    }
+
+    [Fact]
+    public async Task OpenAiResponsesProvider_ContextOverflowBody_MapsContextOverflowError()
+    {
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent(
+                "{\"error\":{\"message\":\"Prompt is too long for the model context window.\"}}",
+                Encoding.UTF8,
+                "application/json")
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://api.openai.com/v1/")
+        };
+
+        using var provider = new OpenAiResponsesLlmProvider(httpClient);
+        var request = new LlmRequest(
+            Model: new ModelDescriptor("openai", "gpt-5-mini", ProviderApiKind.OpenAiResponses),
+            SystemPrompt: "system",
+            Messages: [LlmMessage.UserText("hello")],
+            Tools: []);
+
+        var events = await CollectAsync(provider.StreamAsync(request));
+        var error = Assert.IsType<LlmErrorEvent>(events.Single());
+        Assert.Equal(LlmErrorCategory.ContextOverflow, error.Category);
+        Assert.False(error.Retryable);
+    }
+
+    [Fact]
+    public async Task AnthropicProvider_ContextOverflowBody_MapsContextOverflowError()
+    {
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent(
+                "{\"error\":{\"message\":\"Prompt is too long: please reduce the length.\"}}",
+                Encoding.UTF8,
+                "application/json")
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://api.anthropic.com/v1/")
+        };
+
+        using var provider = new AnthropicLlmProvider(httpClient);
+        var request = new LlmRequest(
+            Model: new ModelDescriptor("anthropic", "claude-sonnet-4-20250514", ProviderApiKind.AnthropicMessages),
+            SystemPrompt: "system",
+            Messages: [LlmMessage.UserText("hello")],
+            Tools: []);
+
+        var events = await CollectAsync(provider.StreamAsync(request));
+        var error = Assert.IsType<LlmErrorEvent>(events.Single());
+        Assert.Equal(LlmErrorCategory.ContextOverflow, error.Category);
+        Assert.False(error.Retryable);
+    }
+
+    [Fact]
+    public async Task OpenAiProvider_RetryableStatus_RetriesAndSucceeds()
+    {
+        var callCount = 0;
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            callCount++;
+            if (callCount == 1)
+            {
+                var retry = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+                {
+                    Content = new StringContent("{\"error\":\"rate_limited\"}", Encoding.UTF8, "application/json")
+                };
+                retry.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.Zero);
+                return retry;
+            }
+
+            var sse = string.Join(
+                "\n",
+                [
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}",
+                    "data: [DONE]"
+                ]);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(sse, Encoding.UTF8, "text/event-stream")
+            };
+        });
+
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://api.openai.com/v1/")
+        };
+
+        using var provider = new OpenAiLlmProvider(httpClient);
+        var request = new LlmRequest(
+            Model: new ModelDescriptor("openai", "gpt-4o-mini", ProviderApiKind.OpenAiChatCompletions),
+            SystemPrompt: "system",
+            Messages: [LlmMessage.UserText("hello")],
+            Tools: [],
+            MaxRetryDelayMs: 10);
+
+        var events = await CollectAsync(provider.StreamAsync(request));
+        var completed = Assert.IsType<LlmCompletedEvent>(events.Last());
+        Assert.Equal("ok", completed.FullText);
+        Assert.Equal(2, callCount);
     }
 
     private static async Task<System.Text.Json.JsonElement> CaptureOpenAiPayloadAsync(
@@ -1139,9 +1682,11 @@ public sealed class LlmProviderMappingTests
 
         public string? LastRequestBody { get; private set; }
         public HttpRequestMessage? LastRequest { get; private set; }
+        public int RequestCount { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            RequestCount++;
             LastRequest = request;
             LastRequestBody = request.Content == null
                 ? null

@@ -111,6 +111,93 @@ public sealed class AgentLoopTests
         Assert.Equal("echo:42", toolBlock.ContentText);
     }
 
+    [Fact]
+    public async Task RunAsync_OnProviderError_PersistsErrorAssistantMessage()
+    {
+        var provider = new ScriptedProvider(
+            [
+                [
+                    new LlmThinkingDeltaEvent("plan"),
+                    new LlmTextDeltaEvent("partial"),
+                    new LlmErrorEvent("boom", LlmErrorCategory.Validation)
+                ]
+            ]);
+
+        var loop = new AgentLoop(provider, new ToolRuntime([]));
+        var conversation = new List<LlmMessage>
+        {
+            LlmMessage.UserText("trigger")
+        };
+
+        var persisted = new List<LlmMessage>();
+        var events = new List<AgentEvent>();
+
+        await foreach (var evt in loop.RunAsync(
+                           conversation,
+                           "trigger",
+                           new ModelDescriptor("openai", "gpt-4o-mini", ProviderApiKind.OpenAiChatCompletions),
+                           "system",
+                           ThinkingLevel.Off,
+                           5,
+                           (message, _) =>
+                           {
+                               persisted.Add(message);
+                               return Task.CompletedTask;
+                           }))
+        {
+            events.Add(evt);
+        }
+
+        var error = Assert.IsType<AgentErrorEvent>(events.Last());
+        Assert.Equal("boom", error.Message);
+        Assert.Single(persisted);
+
+        var assistant = persisted[0];
+        Assert.Equal(LlmMessageRole.Assistant, assistant.Role);
+        Assert.Equal(LlmStopReason.Error, assistant.StopReason);
+        Assert.Equal("boom", assistant.ErrorMessage);
+        Assert.Contains(assistant.Content, block => block is ThinkingContentBlock thinking && thinking.Text == "plan");
+        Assert.Contains(assistant.Content, block => block is TextContentBlock text && text.Text == "partial");
+    }
+
+    [Fact]
+    public async Task RunAsync_OnProviderAbort_PersistsAbortedAssistantMessage()
+    {
+        var provider = new ScriptedProvider(
+            [
+                [
+                    new LlmTextDeltaEvent("partial"),
+                    new LlmErrorEvent("aborted", LlmErrorCategory.Aborted)
+                ]
+            ]);
+
+        var loop = new AgentLoop(provider, new ToolRuntime([]));
+        var conversation = new List<LlmMessage>
+        {
+            LlmMessage.UserText("trigger")
+        };
+
+        var persisted = new List<LlmMessage>();
+        await foreach (var _ in loop.RunAsync(
+                           conversation,
+                           "trigger",
+                           new ModelDescriptor("openai", "gpt-4o-mini", ProviderApiKind.OpenAiChatCompletions),
+                           "system",
+                           ThinkingLevel.Off,
+                           5,
+                           (message, _) =>
+                           {
+                               persisted.Add(message);
+                               return Task.CompletedTask;
+                           }))
+        {
+        }
+
+        Assert.Single(persisted);
+        Assert.Equal(LlmStopReason.Aborted, persisted[0].StopReason);
+        Assert.Equal("aborted", persisted[0].ErrorMessage);
+    }
+
     private sealed class ScriptedProvider : ILlmProvider
     {
         private readonly Queue<IReadOnlyList<LlmStreamEvent>> _turns;

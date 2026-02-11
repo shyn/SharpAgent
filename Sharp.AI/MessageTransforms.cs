@@ -2,6 +2,53 @@ namespace Sharp.AI;
 
 internal static class MessageTransforms
 {
+    public static IReadOnlyList<LlmMessage> DropIncompleteAssistantTurns(IReadOnlyList<LlmMessage> messages)
+    {
+        var transformed = new List<LlmMessage>(messages.Count);
+        var skippedToolCallIds = new HashSet<string>(StringComparer.Ordinal);
+        var changed = false;
+
+        foreach (var message in messages)
+        {
+            var isIncompleteAssistantTurn = message.Role == LlmMessageRole.Assistant
+                                            && (
+                                                message.StopReason is LlmStopReason.Aborted or LlmStopReason.Error
+                                                || (message.StopReason is null
+                                                    && !string.IsNullOrWhiteSpace(message.ErrorMessage)));
+
+            if (isIncompleteAssistantTurn)
+            {
+                changed = true;
+                foreach (var toolCall in message.Content.OfType<ToolCallContentBlock>())
+                    skippedToolCallIds.Add(toolCall.ToolCallId);
+                continue;
+            }
+
+            if (message.Role == LlmMessageRole.Tool)
+            {
+                var remaining = message.Content
+                    .OfType<ToolResultContentBlock>()
+                    .Where(block => !skippedToolCallIds.Contains(block.ToolCallId))
+                    .Cast<ContentBlock>()
+                    .ToList();
+
+                if (remaining.Count != message.Content.Count)
+                {
+                    changed = true;
+                    if (remaining.Count == 0)
+                        continue;
+
+                    transformed.Add(message with { Content = remaining });
+                    continue;
+                }
+            }
+
+            transformed.Add(message);
+        }
+
+        return changed ? transformed : messages;
+    }
+
     public static IReadOnlyList<LlmMessage> NormalizeToolCallIds(
         IReadOnlyList<LlmMessage> messages,
         Func<string?, int, string> normalizeId)
@@ -135,6 +182,61 @@ internal static class MessageTransforms
 
                 if (!string.IsNullOrWhiteSpace(thinking.Text))
                     blocks.Add(new TextContentBlock(thinking.Text));
+                changed = true;
+            }
+
+            if (changed)
+            {
+                transformed.Add(message with { Content = blocks });
+                changedAny = true;
+            }
+            else
+            {
+                transformed.Add(message);
+            }
+        }
+
+        return changedAny ? transformed : messages;
+    }
+
+    public static IReadOnlyList<LlmMessage> ConvertNonAnthropicThinkingSignaturesToText(IReadOnlyList<LlmMessage> messages)
+    {
+        var transformed = new List<LlmMessage>(messages.Count);
+        var changedAny = false;
+
+        foreach (var message in messages)
+        {
+            if (message.Role != LlmMessageRole.Assistant)
+            {
+                transformed.Add(message);
+                continue;
+            }
+
+            var blocks = new List<ContentBlock>(message.Content.Count);
+            var changed = false;
+
+            foreach (var block in message.Content)
+            {
+                if (block is not ThinkingContentBlock thinking
+                    || string.IsNullOrWhiteSpace(thinking.Signature))
+                {
+                    blocks.Add(block);
+                    continue;
+                }
+
+                if (!ThinkingSignatureInterop.TryNormalizeOpenAiReasoningItem(
+                        thinking.Signature,
+                        out _,
+                        out var summaryText))
+                {
+                    blocks.Add(block);
+                    continue;
+                }
+
+                var text = !string.IsNullOrWhiteSpace(thinking.Text) ? thinking.Text : summaryText;
+                if (!string.IsNullOrWhiteSpace(text))
+                    blocks.Add(new TextContentBlock(text));
+
                 changed = true;
             }
 

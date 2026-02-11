@@ -8,5 +8,6 @@ public enum LlmErrorCategory
     RateLimit,
     Server,
     Network,
-    Validation
+    Validation,
+    ContextOverflow
 }

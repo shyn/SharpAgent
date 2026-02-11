@@ -4,7 +4,7 @@ using Sharp.Core.Configuration;
 namespace Sharp.Cli;
 
 internal sealed record CliOptions(
-    string ConfigPath,
+    string? ConfigPath,
     string? Model,
     string? WorkingDirectory,
     string? SessionDirectory,
@@ -19,7 +19,7 @@ internal sealed record CliOptions(
     bool Debug)
 {
     public static CliOptions CreateDefault() => new(
-        ConfigPath: AgentConfigurationService.DefaultConfigPath(),
+        ConfigPath: null, // null means: try CWD first, then agent dir
         Model: null,
         WorkingDirectory: null,
         SessionDirectory: null,

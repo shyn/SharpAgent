@@ -6,4 +6,6 @@ public sealed record ModelDescriptor(
     ProviderApiKind ApiKind,
     int? ContextWindow = null,
     int? MaxOutputTokens = null,
-    OpenAiCompletionsCompat? OpenAiCompletionsCompat = null);
+    OpenAiCompletionsCompat? OpenAiCompletionsCompat = null,
+    ModelCapabilities? Capabilities = null,
+    ModelPricing? Pricing = null);

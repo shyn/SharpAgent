@@ -1,6 +1,10 @@
 namespace Sharp.AI;
 
-public sealed record LlmMessage(LlmMessageRole Role, IReadOnlyList<ContentBlock> Content)
+public sealed record LlmMessage(
+    LlmMessageRole Role,
+    IReadOnlyList<ContentBlock> Content,
+    LlmStopReason? StopReason = null,
+    string? ErrorMessage = null)
 {
     public static LlmMessage SystemText(string text) => new(LlmMessageRole.System, [new TextContentBlock(text)]);
 

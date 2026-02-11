@@ -9,7 +9,8 @@ public enum ModelApiFormat
 {
     OpenAiCompletions,
     OpenAiResponses,
-    AnthropicMessages
+    AnthropicMessages,
+    GoogleGeminiCli
 }
 
 public sealed class ModelApiFormatJsonConverter : JsonConverter<ModelApiFormat>
@@ -29,15 +30,20 @@ public sealed class ModelApiFormatJsonConverter : JsonConverter<ModelApiFormat>
             "openai-chat-completions" => ModelApiFormat.OpenAiCompletions,
             "openai-responses" => ModelApiFormat.OpenAiResponses,
             "anthropic-messages" => ModelApiFormat.AnthropicMessages,
+            "google-gemini-cli" => ModelApiFormat.GoogleGeminiCli,
+            // Backward compatibility for an early Sharp experimental value.
+            "google-antigravity" => ModelApiFormat.GoogleGeminiCli,
 
             // Backward compatibility for old enum-style config values.
             "OpenAiCompletions" => ModelApiFormat.OpenAiCompletions,
             "OpenAiChatCompletions" => ModelApiFormat.OpenAiCompletions,
             "OpenAiResponses" => ModelApiFormat.OpenAiResponses,
             "AnthropicMessages" => ModelApiFormat.AnthropicMessages,
+            "GoogleGeminiCli" => ModelApiFormat.GoogleGeminiCli,
+            "GoogleAntigravity" => ModelApiFormat.GoogleGeminiCli,
             _ => throw new JsonException(
                 $"Unsupported model api format '{value}'. Expected one of: " +
-                "'openai-completions', 'openai-responses', 'anthropic-messages'.")
+                "'openai-completions', 'openai-responses', 'anthropic-messages', 'google-gemini-cli'.")
         };
     }
 
@@ -48,6 +54,7 @@ public sealed class ModelApiFormatJsonConverter : JsonConverter<ModelApiFormat>
             ModelApiFormat.OpenAiCompletions => "openai-completions",
             ModelApiFormat.OpenAiResponses => "openai-responses",
             ModelApiFormat.AnthropicMessages => "anthropic-messages",
+            ModelApiFormat.GoogleGeminiCli => "google-gemini-cli",
             _ => throw new ArgumentOutOfRangeException(nameof(value), value, "Unsupported model API")
         };
 
@@ -65,6 +72,12 @@ public sealed class ModelConfig
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public OpenAiCompletionsCompatConfig? Compat { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ModelCapabilitiesConfig? Capabilities { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ModelPricingConfig? Pricing { get; set; }
 
     public int? ContextWindow { get; set; }
     public int? MaxOutputTokens { get; set; }
@@ -85,6 +98,21 @@ public sealed class OpenAiCompletionsCompatConfig
     public string? ThinkingFormat { get; set; }
     public OpenAiRoutingPreferences? OpenRouterRouting { get; set; }
     public OpenAiRoutingPreferences? VercelGatewayRouting { get; set; }
+}
+
+public sealed class ModelCapabilitiesConfig
+{
+    public bool? SupportsReasoning { get; set; }
+    public bool? SupportsImageInput { get; set; }
+    public bool? SupportsToolCall { get; set; }
+}
+
+public sealed class ModelPricingConfig
+{
+    public decimal? InputPerMillionTokens { get; set; }
+    public decimal? OutputPerMillionTokens { get; set; }
+    public decimal? CacheReadPerMillionTokens { get; set; }
+    public decimal? CacheWritePerMillionTokens { get; set; }
 }
 
 public sealed class ProviderConfig
@@ -136,7 +164,8 @@ public sealed class AgentConfig
                     MaxOutputTokens = 8192
                 }
             ]
-        }
+        },
+        ..BuiltInPiProviders.Create()
     ];
 
     public static ProviderApiKind ToProviderApiKind(ModelApiFormat api)
@@ -145,6 +174,7 @@ public sealed class AgentConfig
             ModelApiFormat.OpenAiCompletions => ProviderApiKind.OpenAiChatCompletions,
             ModelApiFormat.OpenAiResponses => ProviderApiKind.OpenAiResponses,
             ModelApiFormat.AnthropicMessages => ProviderApiKind.AnthropicMessages,
+            ModelApiFormat.GoogleGeminiCli => ProviderApiKind.GoogleGeminiCli,
             _ => throw new ArgumentOutOfRangeException(nameof(api), api, "Unsupported model API")
         };
 
@@ -176,6 +206,65 @@ public sealed class AgentConfig
             ThinkingFormat: ParseThinkingFormat(compat.ThinkingFormat),
             OpenRouterRouting: NormalizeRouting(compat.OpenRouterRouting),
             VercelGatewayRouting: NormalizeRouting(compat.VercelGatewayRouting));
+    }
+
+    public static ModelCapabilities ToModelCapabilities(
+        ModelApiFormat apiFormat,
+        ModelCapabilitiesConfig? config)
+    {
+        var defaults = apiFormat switch
+        {
+            ModelApiFormat.OpenAiResponses => new ModelCapabilities(
+                SupportsReasoning: true,
+                SupportsImageInput: true,
+                SupportsToolCall: true),
+            ModelApiFormat.OpenAiCompletions => new ModelCapabilities(
+                SupportsReasoning: true,
+                SupportsImageInput: false,
+                SupportsToolCall: true),
+            ModelApiFormat.AnthropicMessages => new ModelCapabilities(
+                SupportsReasoning: true,
+                SupportsImageInput: false,
+                SupportsToolCall: true),
+            ModelApiFormat.GoogleGeminiCli => new ModelCapabilities(
+                SupportsReasoning: true,
+                SupportsImageInput: true,
+                SupportsToolCall: true),
+            _ => throw new ArgumentOutOfRangeException(nameof(apiFormat), apiFormat, "Unsupported model API")
+        };
+
+        if (config == null)
+            return defaults;
+
+        return defaults with
+        {
+            SupportsReasoning = config.SupportsReasoning ?? defaults.SupportsReasoning,
+            SupportsImageInput = config.SupportsImageInput ?? defaults.SupportsImageInput,
+            SupportsToolCall = config.SupportsToolCall ?? defaults.SupportsToolCall
+        };
+    }
+
+    public static ModelPricing? ToModelPricing(ModelPricingConfig? config)
+    {
+        if (config == null)
+            return null;
+
+        var input = config.InputPerMillionTokens ?? 0m;
+        var output = config.OutputPerMillionTokens ?? 0m;
+        var cacheRead = config.CacheReadPerMillionTokens ?? 0m;
+        var cacheWrite = config.CacheWritePerMillionTokens ?? 0m;
+
+        if (input < 0m || output < 0m || cacheRead < 0m || cacheWrite < 0m)
+            throw new JsonException("Model pricing values must be non-negative.");
+
+        if (input == 0m && output == 0m && cacheRead == 0m && cacheWrite == 0m)
+            return null;
+
+        return new ModelPricing(
+            InputPerMillionTokens: input,
+            OutputPerMillionTokens: output,
+            CacheReadPerMillionTokens: cacheRead,
+            CacheWritePerMillionTokens: cacheWrite);
     }
 
     private static string? ParseThinkingFormat(string? rawValue)

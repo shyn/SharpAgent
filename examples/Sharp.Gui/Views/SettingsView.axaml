@@ -1,0 +1,316 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Sharp.Gui.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="700" d:DesignHeight="400"
+             x:Class="Sharp.Gui.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+
+    <Border Background="#0f0f23"
+            Padding="20">
+        <Grid ColumnDefinitions="220,*"
+              ColumnSpacing="14">
+            <Border Grid.Column="0"
+                    Background="#111827"
+                    CornerRadius="10"
+                    Padding="12"
+                    BorderBrush="#2d2d4a"
+                    BorderThickness="1">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Settings"
+                               Foreground="#e2e8f0"
+                               FontSize="20"
+                               FontWeight="Bold"/>
+                    <Border Height="1" Background="#2d2d4a"/>
+                    <ListBox ItemsSource="{Binding MenuItems}"
+                             SelectedItem="{Binding SelectedMenuItem}"
+                             Background="Transparent"
+                             BorderThickness="0">
+                        <ListBox.Styles>
+                            <Style Selector="ListBoxItem">
+                                <Setter Property="Padding" Value="10,8"/>
+                                <Setter Property="CornerRadius" Value="6"/>
+                                <Setter Property="Margin" Value="0,2,0,0"/>
+                            </Style>
+                            <Style Selector="ListBoxItem:pointerover">
+                                <Setter Property="Background" Value="#1f2937"/>
+                            </Style>
+                            <Style Selector="ListBoxItem:selected">
+                                <Setter Property="Background" Value="#1e3a5f"/>
+                            </Style>
+                        </ListBox.Styles>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="vm:SettingsMenuItemViewModel">
+                                <TextBlock Text="{Binding Title}"
+                                           Foreground="#d1d5db"
+                                           FontSize="13"
+                                           FontWeight="SemiBold"/>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="1"
+                    Background="#0b1220"
+                    CornerRadius="10"
+                    Padding="16"
+                    BorderBrush="#2d2d4a"
+                    BorderThickness="1">
+                <Grid>
+                    <StackPanel IsVisible="{Binding IsGeneralSectionSelected}"
+                                Spacing="14">
+                        <TextBlock Text="General"
+                                   Foreground="#e2e8f0"
+                                   FontSize="18"
+                                   FontWeight="Bold"/>
+                        <Border Height="1" Background="#2d2d4a"/>
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Config File Path"
+                                       Foreground="#94a3b8"
+                                       FontSize="13"
+                                       FontWeight="SemiBold"/>
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right"
+                                        Content="Browse…"
+                                        Command="{Binding BrowseCommand}"
+                                        Margin="8,0,0,0"
+                                        Padding="12,8"
+                                        Background="#1e3a5f"
+                                        Foreground="#60a5fa"
+                                        CornerRadius="6"
+                                        FontSize="13"/>
+                                <TextBox Text="{Binding ConfigFilePath, Mode=TwoWay}"
+                                         Watermark="Path to config.json"
+                                         Background="#16213e"
+                                         Foreground="#e2e8f0"
+                                         CornerRadius="6"
+                                         Padding="10,8"
+                                         BorderBrush="#2d2d4a"
+                                         BorderThickness="1"
+                                         FontSize="13"/>
+                            </DockPanel>
+                            <TextBlock Text="The JSON configuration file containing provider/model definitions and credentials."
+                                       Foreground="#6b7280"
+                                       FontSize="11"
+                                       TextWrapping="Wrap"/>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="10"
+                                    HorizontalAlignment="Right">
+                            <Button Content="Reset to Default"
+                                    Command="{Binding ResetToDefaultCommand}"
+                                    Padding="14,8"
+                                    Background="#374151"
+                                    Foreground="#d1d5db"
+                                    CornerRadius="6"
+                                    FontSize="13"/>
+                            <Button Content="Apply &amp; Reload"
+                                    Command="{Binding ApplyCommand}"
+                                    Padding="14,8"
+                                    Background="#3b82f6"
+                                    Foreground="White"
+                                    CornerRadius="6"
+                                    FontSize="13"
+                                    FontWeight="SemiBold"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <Grid IsVisible="{Binding IsProvidersSectionSelected}"
+                          RowDefinitions="Auto,*"
+                          RowSpacing="10">
+                        <DockPanel>
+                            <TextBlock Text="Providers"
+                                       Foreground="#e2e8f0"
+                                       FontSize="18"
+                                       FontWeight="Bold"/>
+                            <Button DockPanel.Dock="Right"
+                                    Content="Reload"
+                                    Command="{Binding RefreshProvidersCommand}"
+                                    Padding="12,6"
+                                    Background="#1e3a5f"
+                                    Foreground="#60a5fa"
+                                    CornerRadius="6"
+                                    FontSize="12"/>
+                        </DockPanel>
+
+                        <Grid Grid.Row="1"
+                              ColumnDefinitions="260,*"
+                              ColumnSpacing="12">
+                            <Border Grid.Column="0"
+                                    Background="#111827"
+                                    CornerRadius="8"
+                                    Padding="8"
+                                    BorderBrush="#2d2d4a"
+                                    BorderThickness="1">
+                                <ListBox ItemsSource="{Binding Providers}"
+                                         SelectedItem="{Binding SelectedProvider}"
+                                         Background="Transparent"
+                                         BorderThickness="0">
+                                    <ListBox.Styles>
+                                        <Style Selector="ListBoxItem">
+                                            <Setter Property="Padding" Value="8,8"/>
+                                            <Setter Property="CornerRadius" Value="6"/>
+                                            <Setter Property="Margin" Value="0,2,0,0"/>
+                                        </Style>
+                                        <Style Selector="ListBoxItem:pointerover">
+                                            <Setter Property="Background" Value="#1f2937"/>
+                                        </Style>
+                                        <Style Selector="ListBoxItem:selected">
+                                            <Setter Property="Background" Value="#1e3a5f"/>
+                                        </Style>
+                                    </ListBox.Styles>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate DataType="vm:ProviderEntryViewModel">
+                                            <StackPanel Spacing="4">
+                                                <DockPanel>
+                                                    <Border DockPanel.Dock="Right"
+                                                            Background="#374151"
+                                                            CornerRadius="4"
+                                                            Padding="6,2">
+                                                        <TextBlock Text="{Binding SourceLabel}"
+                                                                   Foreground="#d1d5db"
+                                                                   FontSize="10"/>
+                                                    </Border>
+                                                    <TextBlock Text="{Binding Id}"
+                                                               Foreground="#e5e7eb"
+                                                               FontSize="13"
+                                                               FontWeight="SemiBold"/>
+                                                </DockPanel>
+                                                <TextBlock Text="{Binding CredentialStatus}"
+                                                           Foreground="#6b7280"
+                                                           FontSize="10"
+                                                           TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Border>
+
+                            <Border Grid.Column="1"
+                                    Background="#0f172a"
+                                    CornerRadius="8"
+                                    Padding="14"
+                                    BorderBrush="#2d2d4a"
+                                    BorderThickness="1">
+                                <Grid>
+                                    <Grid IsVisible="{Binding HasSelectedProvider}"
+                                          RowDefinitions="Auto,Auto,Auto,Auto,*"
+                                          RowSpacing="10">
+                                        <TextBlock Text="{Binding SelectedProvider.Id}"
+                                                   Foreground="#e2e8f0"
+                                                   FontSize="17"
+                                                   FontWeight="Bold"/>
+
+                                        <WrapPanel Grid.Row="1"
+                                                   Orientation="Horizontal"
+                                                   ItemHeight="28"
+                                                   ItemWidth="180">
+                                            <Border Background="#1e293b"
+                                                    CornerRadius="6"
+                                                    Padding="8,4"
+                                                    Margin="0,0,8,0">
+                                                <TextBlock Text="{Binding SelectedProvider.Api}"
+                                                           Foreground="#93c5fd"
+                                                           FontSize="11"/>
+                                            </Border>
+                                            <Border Background="#1f2937"
+                                                    CornerRadius="6"
+                                                    Padding="8,4">
+                                                <TextBlock Text="{Binding SelectedProvider.SourceLabel}"
+                                                           Foreground="#d1d5db"
+                                                           FontSize="11"/>
+                                            </Border>
+                                        </WrapPanel>
+
+                                        <StackPanel Grid.Row="2" Spacing="4">
+                                            <TextBlock Text="Base URL"
+                                                       Foreground="#94a3b8"
+                                                       FontSize="12"
+                                                       FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding SelectedProvider.BaseUrl}"
+                                                       Foreground="#cbd5e1"
+                                                       FontSize="12"
+                                                       TextWrapping="Wrap"/>
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Row="3"
+                                                    Spacing="8">
+                                            <TextBlock Text="{Binding SelectedProvider.CredentialStatus}"
+                                                       Foreground="#f59e0b"
+                                                       FontSize="12"
+                                                       TextWrapping="Wrap"/>
+                                            <Button Content="Login with OAuth"
+                                                    IsVisible="{Binding SelectedProvider.NeedsLogin}"
+                                                    Command="{Binding LoginSelectedProviderCommand}"
+                                                    IsEnabled="{Binding !IsLoggingIn}"
+                                                    Padding="12,8"
+                                                    Background="#2563eb"
+                                                    Foreground="White"
+                                                    HorizontalAlignment="Left"
+                                                    CornerRadius="6"
+                                                    FontWeight="SemiBold"/>
+                                            <TextBlock Text="Logging in..."
+                                                       IsVisible="{Binding IsLoggingIn}"
+                                                       Foreground="#60a5fa"
+                                                       FontSize="12"/>
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Row="4"
+                                                    Spacing="6">
+                                            <TextBlock Text="Models"
+                                                       Foreground="#94a3b8"
+                                                       FontSize="12"
+                                                       FontWeight="SemiBold"/>
+                                            <Border Background="#0b1220"
+                                                    BorderBrush="#2d2d4a"
+                                                    BorderThickness="1"
+                                                    CornerRadius="6"
+                                                    Padding="8"
+                                                    MaxHeight="260">
+                                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                                    <ItemsControl ItemsSource="{Binding SelectedProvider.Models}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate DataType="vm:ProviderModelViewModel">
+                                                                <DockPanel Margin="0,0,0,6">
+                                                                    <TextBlock DockPanel.Dock="Right"
+                                                                               Text="{Binding MaxOutputTokens}"
+                                                                               Foreground="#64748b"
+                                                                               FontSize="10"/>
+                                                                    <TextBlock Text="{Binding Id}"
+                                                                               Foreground="#cbd5e1"
+                                                                               FontSize="12"/>
+                                                                </DockPanel>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </ScrollViewer>
+                                            </Border>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <TextBlock IsVisible="{Binding !HasSelectedProvider}"
+                                               Text="Select a provider to inspect details."
+                                               Foreground="#6b7280"
+                                               FontSize="13"/>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </Grid>
+
+                    <TextBlock Text="{Binding StatusMessage}"
+                               VerticalAlignment="Bottom"
+                               HorizontalAlignment="Left"
+                               Margin="0,0,0,2"
+                               IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                               FontSize="12"
+                               TextWrapping="Wrap"
+                               Foreground="#34d399"/>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+
+</UserControl>

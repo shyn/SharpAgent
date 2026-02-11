@@ -9,17 +9,40 @@ public static class LlmProviderFactory
     {
         Register(
             ProviderApiKind.OpenAiChatCompletions,
-            context => CreateOpenAi(CreateHttpClient(context.BaseUrl, context.Handler), context.ApiKey),
+            context => CreateOpenAi(CreateHttpClient(
+                context.Model,
+                context.BaseUrl,
+                context.Handler,
+                ResolveCredentialProvider(context))),
             overwrite: true);
 
         Register(
             ProviderApiKind.OpenAiResponses,
-            context => CreateOpenAiResponses(CreateHttpClient(context.BaseUrl, context.Handler), context.ApiKey),
+            context => CreateOpenAiResponses(CreateHttpClient(
+                context.Model,
+                context.BaseUrl,
+                context.Handler,
+                ResolveCredentialProvider(context))),
             overwrite: true);
 
         Register(
             ProviderApiKind.AnthropicMessages,
-            context => CreateAnthropic(CreateHttpClient(context.BaseUrl, context.Handler), context.ApiKey),
+            context => CreateAnthropic(CreateHttpClient(
+                context.Model,
+                context.BaseUrl,
+                context.Handler,
+                ResolveCredentialProvider(context))),
+            overwrite: true);
+
+        Register(
+            ProviderApiKind.GoogleGeminiCli,
+            context => CreateGoogleAntigravity(
+                CreateHttpClient(
+                    context.Model,
+                    context.BaseUrl,
+                    context.Handler,
+                    ResolveCredentialProvider(context)),
+                AntigravityCredentialEnvelope.ResolveProjectId(context.ApiKey)),
             overwrite: true);
     }
 
@@ -63,8 +86,16 @@ public static class LlmProviderFactory
         string apiKey,
         string baseUrl,
         HttpMessageHandler? handler = null)
+        => Create(model, apiKey, baseUrl, credentialProvider: null, handler);
+
+    public static ILlmProvider Create(
+        ModelDescriptor model,
+        string apiKey,
+        string baseUrl,
+        ILlmCredentialProvider? credentialProvider,
+        HttpMessageHandler? handler = null)
     {
-        if (string.IsNullOrWhiteSpace(apiKey))
+        if (credentialProvider == null && string.IsNullOrWhiteSpace(apiKey))
             throw new InvalidOperationException($"Missing API key for provider '{model.ProviderId}'");
 
         Func<LlmProviderCreateContext, ILlmProvider>? factory;
@@ -76,35 +107,57 @@ public static class LlmProviderFactory
         if (factory == null)
             throw new ArgumentOutOfRangeException(nameof(model.ApiKind), model.ApiKind, "Unknown provider API kind");
 
-        return factory(new LlmProviderCreateContext(model, apiKey, baseUrl, handler));
+        return factory(new LlmProviderCreateContext(model, apiKey, baseUrl, handler, credentialProvider));
     }
 
-    private static HttpClient CreateHttpClient(string baseUrl, HttpMessageHandler? handler)
+    private static ILlmCredentialProvider ResolveCredentialProvider(LlmProviderCreateContext context)
+    {
+        if (context.CredentialProvider != null)
+            return context.CredentialProvider;
+
+        if (string.IsNullOrWhiteSpace(context.ApiKey))
+            throw new InvalidOperationException($"Missing API key for provider '{context.Model.ProviderId}'");
+
+        if (context.Model.ApiKind == ProviderApiKind.GoogleGeminiCli
+            && context.Model.ProviderId.Equals("google-antigravity", StringComparison.OrdinalIgnoreCase))
+        {
+            return new CachingBearerCredentialProvider(
+                context.Model.ApiKind,
+                new AntigravityBearerTokenSource(context.ApiKey));
+        }
+
+        return new StaticApiKeyCredentialProvider(context.ApiKey);
+    }
+
+    private static HttpClient CreateHttpClient(
+        ModelDescriptor model,
+        string baseUrl,
+        HttpMessageHandler? handler,
+        ILlmCredentialProvider credentialProvider)
     {
         if (!baseUrl.EndsWith('/'))
             baseUrl += "/";
 
-        var httpClient = handler == null ? new HttpClient() : new HttpClient(handler, disposeHandler: true);
+        var innerHandler = handler ?? new HttpClientHandler();
+        var pipeline = new CredentialInjectionHandler(
+            innerHandler,
+            credentialProvider,
+            new LlmCredentialContext(model, baseUrl));
+
+        var httpClient = new HttpClient(pipeline, disposeHandler: true);
         httpClient.BaseAddress = new Uri(baseUrl);
         return httpClient;
     }
 
-    private static ILlmProvider CreateOpenAi(HttpClient httpClient, string apiKey)
-    {
-        httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-        return new Providers.OpenAiLlmProvider(httpClient);
-    }
+    private static ILlmProvider CreateOpenAi(HttpClient httpClient)
+        => new Providers.OpenAiLlmProvider(httpClient);
 
-    private static ILlmProvider CreateOpenAiResponses(HttpClient httpClient, string apiKey)
-    {
-        httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-        return new Providers.OpenAiResponsesLlmProvider(httpClient);
-    }
+    private static ILlmProvider CreateOpenAiResponses(HttpClient httpClient)
+        => new Providers.OpenAiResponsesLlmProvider(httpClient);
 
-    private static ILlmProvider CreateAnthropic(HttpClient httpClient, string apiKey)
-    {
-        httpClient.DefaultRequestHeaders.Add("x-api-key", apiKey);
-        httpClient.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
-        return new Providers.AnthropicLlmProvider(httpClient);
-    }
+    private static ILlmProvider CreateAnthropic(HttpClient httpClient)
+        => new Providers.AnthropicLlmProvider(httpClient);
+
+    private static ILlmProvider CreateGoogleAntigravity(HttpClient httpClient, string projectId)
+        => new Providers.GoogleAntigravityLlmProvider(httpClient, projectId);
 }

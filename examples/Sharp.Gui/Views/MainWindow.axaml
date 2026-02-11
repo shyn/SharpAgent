@@ -1,0 +1,212 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Sharp.Gui.ViewModels"
+        xmlns:v="using:Sharp.Gui.Views"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="700"
+        x:Class="Sharp.Gui.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="{Binding Title}"
+        Width="1000" Height="700"
+        MinWidth="600" MinHeight="450">
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <DockPanel>
+        <!-- Status Bar -->
+        <Border DockPanel.Dock="Bottom"
+                Background="#1a1a2e"
+                Padding="12,6">
+            <DockPanel>
+                <TextBlock Text="{Binding Chat.TokenInfo}"
+                           DockPanel.Dock="Right"
+                           Foreground="#fbbf24"
+                           FontSize="12"
+                           Margin="12,0,0,0"/>
+                <TextBlock Text="{Binding Chat.StatusText}"
+                           Foreground="#9ca3af"
+                           FontSize="12"/>
+            </DockPanel>
+        </Border>
+
+        <!-- Title Bar with Controls -->
+        <Border DockPanel.Dock="Top"
+                Background="#16213e"
+                Padding="12,8">
+            <DockPanel>
+                <!-- Right side: Settings gear + Model + Thinking -->
+                <StackPanel DockPanel.Dock="Right"
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            VerticalAlignment="Center">
+                    <!-- Thinking Level -->
+                    <TextBlock Text="Thinking:"
+                               Foreground="#94a3b8"
+                               FontSize="12"
+                               VerticalAlignment="Center"/>
+                    <ComboBox ItemsSource="{Binding ThinkingLevels}"
+                              SelectedItem="{Binding SelectedThinkingLevel}"
+                              MinWidth="90"
+                              FontSize="12"
+                              Background="#0f3460"
+                              Foreground="#e2e8f0"
+                              CornerRadius="6"
+                              Padding="8,4"/>
+
+                    <!-- Model Selector -->
+                    <TextBlock Text="Model:"
+                               Foreground="#94a3b8"
+                               FontSize="12"
+                               VerticalAlignment="Center"/>
+                    <ComboBox ItemsSource="{Binding AvailableModels}"
+                              SelectedItem="{Binding SelectedModel}"
+                              MinWidth="180"
+                              FontSize="12"
+                              Background="#0f3460"
+                              Foreground="#e2e8f0"
+                              CornerRadius="6"
+                              Padding="8,4"/>
+
+                    <!-- Settings gear -->
+                    <Button Content="⚙"
+                            Command="{Binding OpenSettingsCommand}"
+                            Background="Transparent"
+                            Foreground="#94a3b8"
+                            FontSize="16"
+                            Padding="6,2"
+                            VerticalAlignment="Center"/>
+                </StackPanel>
+
+                <!-- Left side: Toggle + Title -->
+                <StackPanel Orientation="Horizontal"
+                            Spacing="8"
+                            VerticalAlignment="Center">
+                    <Button Content="☰"
+                            Command="{Binding ToggleSidebarCommand}"
+                            Background="Transparent"
+                            Foreground="#94a3b8"
+                            FontSize="16"
+                            Padding="4,2"
+                            VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding Title}"
+                               Foreground="#e2e8f0"
+                               FontSize="16"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Init Error -->
+        <Border IsVisible="{Binding InitError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                DockPanel.Dock="Top"
+                Background="#7f1d1d"
+                Padding="12,8">
+            <TextBlock Text="{Binding InitError}"
+                       Foreground="#fca5a5"
+                       TextWrapping="Wrap"
+                       FontSize="13"/>
+        </Border>
+
+        <!-- Main Content: Sidebar + Chat or Settings -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Session Sidebar -->
+            <Border Grid.Column="0"
+                    IsVisible="{Binding IsSidebarVisible}"
+                    Background="#111827"
+                    Width="220"
+                    BorderThickness="0,0,1,0"
+                    BorderBrush="#2d2d4a">
+                <DockPanel>
+                    <!-- New Session Button -->
+                    <Button DockPanel.Dock="Top"
+                            Content="＋ New Session"
+                            Command="{Binding NewSessionCommand}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Margin="8"
+                            Padding="8,6"
+                            Background="#1e3a5f"
+                            Foreground="#60a5fa"
+                            CornerRadius="6"
+                            FontSize="13"
+                            FontWeight="SemiBold"/>
+
+                    <!-- Session List -->
+                    <ListBox ItemsSource="{Binding SessionItems}"
+                             SelectedItem="{Binding SelectedSession}"
+                             Background="Transparent"
+                             Padding="4">
+                        <ListBox.Styles>
+                            <Style Selector="ListBoxItem">
+                                <Setter Property="Padding" Value="8,6"/>
+                                <Setter Property="CornerRadius" Value="6"/>
+                                <Setter Property="Margin" Value="2"/>
+                            </Style>
+                            <Style Selector="ListBoxItem:pointerover">
+                                <Setter Property="Background" Value="#1f2937"/>
+                            </Style>
+                            <Style Selector="ListBoxItem:selected">
+                                <Setter Property="Background" Value="#1e3a5f"/>
+                            </Style>
+                        </ListBox.Styles>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="vm:SessionItemViewModel">
+                                <StackPanel Spacing="2">
+                                    <DockPanel>
+                                        <TextBlock Text="{Binding DisplayTime}"
+                                                   DockPanel.Dock="Right"
+                                                   Foreground="#6b7280"
+                                                   FontSize="10"/>
+                                        <TextBlock Text="{Binding DisplayName}"
+                                                   Foreground="#d1d5db"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold"/>
+                                    </DockPanel>
+                                    <TextBlock Text="{Binding DisplayDir}"
+                                               Foreground="#6b7280"
+                                               FontSize="10"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <!-- Content Area: Chat or Settings -->
+            <Panel Grid.Column="1">
+                <!-- Chat (hidden when settings open) -->
+                <Panel IsVisible="{Binding !IsSettingsVisible}">
+                    <v:ChatView DataContext="{Binding Chat}"/>
+                </Panel>
+
+                <!-- Settings Page -->
+                <DockPanel IsVisible="{Binding IsSettingsVisible}">
+                    <!-- Back button at top -->
+                    <Border DockPanel.Dock="Top"
+                            Background="#111827"
+                            Padding="12,8"
+                            BorderThickness="0,0,0,1"
+                            BorderBrush="#2d2d4a">
+                        <Button Content="← Back to Chat"
+                                Command="{Binding CloseSettingsCommand}"
+                                Background="Transparent"
+                                Foreground="#60a5fa"
+                                FontSize="13"
+                                Padding="4,2"/>
+                    </Border>
+                    <v:SettingsView DataContext="{Binding Settings}"/>
+                </DockPanel>
+            </Panel>
+        </Grid>
+    </DockPanel>
+
+</Window>

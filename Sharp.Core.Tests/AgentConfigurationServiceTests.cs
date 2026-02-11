@@ -41,6 +41,7 @@ public sealed class AgentConfigurationServiceTests
         Assert.Equal("gpt-4o-mini", options.Model.ModelId);
         Assert.Equal(ProviderApiKind.OpenAiChatCompletions, options.Model.ApiKind);
         Assert.Equal("test-key", options.ApiKey);
+        Assert.IsType<CachingBearerCredentialProvider>(options.CredentialProvider);
         Assert.Equal(ThinkingLevel.Low, options.ThinkingLevel);
         Assert.Equal(7, options.MaxTurns);
     }
@@ -49,6 +50,105 @@ public sealed class AgentConfigurationServiceTests
     public void ParseModelString_InvalidFormat_Throws()
     {
         Assert.Throws<ArgumentException>(() => AgentConfigurationService.ParseModelString("bad-format"));
+    }
+
+    [Fact]
+    public void BuildRuntimeOptions_MapsModelCapabilitiesAndPricing()
+    {
+        var config = new AgentConfig
+        {
+            DefaultModel = "openai/gpt-4o-mini",
+            Providers =
+            [
+                new ProviderConfig
+                {
+                    Id = "openai",
+                    Api = ModelApiFormat.OpenAiResponses,
+                    ApiKey = "test-key",
+                    BaseUrl = "https://api.openai.com/v1/",
+                    Models =
+                    [
+                        new ModelConfig
+                        {
+                            Id = "gpt-4o-mini",
+                            Capabilities = new ModelCapabilitiesConfig
+                            {
+                                SupportsImageInput = false
+                            },
+                            Pricing = new ModelPricingConfig
+                            {
+                                InputPerMillionTokens = 2m,
+                                OutputPerMillionTokens = 8m,
+                                CacheReadPerMillionTokens = 0.4m
+                            }
+                        }
+                    ]
+                }
+            ]
+        };
+
+        var service = new AgentConfigurationService(config);
+        var options = service.BuildRuntimeOptions();
+
+        Assert.NotNull(options.Model.Capabilities);
+        Assert.True(options.Model.Capabilities!.SupportsReasoning);
+        Assert.False(options.Model.Capabilities.SupportsImageInput);
+        Assert.True(options.Model.Capabilities.SupportsToolCall);
+
+        Assert.NotNull(options.Model.Pricing);
+        Assert.Equal(2m, options.Model.Pricing!.InputPerMillionTokens);
+        Assert.Equal(8m, options.Model.Pricing.OutputPerMillionTokens);
+        Assert.Equal(0.4m, options.Model.Pricing.CacheReadPerMillionTokens);
+        Assert.Equal(0m, options.Model.Pricing.CacheWritePerMillionTokens);
+    }
+
+    [Fact]
+    public void AgentConfig_DefaultProviders_IncludePiAlignedBuiltInProviders()
+    {
+        var config = new AgentConfig();
+
+        var expectedProviderIds = new[]
+        {
+            "openai",
+            "anthropic",
+            "openrouter",
+            "xai",
+            "groq",
+            "cerebras",
+            "zai",
+            "mistral",
+            "minimax",
+            "minimax-cn",
+            "huggingface",
+            "opencode",
+            "github-copilot",
+            "kimi-coding",
+            "google-antigravity"
+        };
+
+        foreach (var providerId in expectedProviderIds)
+        {
+            Assert.Single(
+                config.Providers,
+                p => p.Id.Equals(providerId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var provider = Assert.Single(
+            config.Providers,
+            p => p.Id.Equals("kimi-coding", StringComparison.OrdinalIgnoreCase));
+
+        Assert.Equal(ModelApiFormat.AnthropicMessages, provider.Api);
+        Assert.Equal("https://api.kimi.com/coding/v1/", provider.BaseUrl);
+        var kimiDefaultModel = Assert.Single(provider.Models);
+        Assert.Equal("kimi-k2-thinking", kimiDefaultModel.Id);
+
+        var antigravity = Assert.Single(
+            config.Providers,
+            p => p.Id.Equals("google-antigravity", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(ModelApiFormat.GoogleGeminiCli, antigravity.Api);
+        Assert.Contains(
+            antigravity.Models,
+            m => m.Id.Equals("gemini-3-flash", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -86,6 +186,122 @@ public sealed class AgentConfigurationServiceTests
                 var service = new AgentConfigurationService(config);
                 var options = service.BuildRuntimeOptions();
                 Assert.Equal("env-kimi-key", options.ApiKey);
+            });
+    }
+
+    [Fact]
+    public void BuildRuntimeOptions_CanonicalKimiCodingProvider_UsesGlobalKimiAlias()
+    {
+        var config = new AgentConfig
+        {
+            DefaultModel = "kimi-coding/k2p5",
+            Providers =
+            [
+                new ProviderConfig
+                {
+                    Id = "kimi-coding",
+                    Api = ModelApiFormat.AnthropicMessages,
+                    ApiKey = null,
+                    BaseUrl = "https://api.kimi.com/coding/v1/",
+                    Models =
+                    [
+                        new ModelConfig
+                        {
+                            Id = "k2p5"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        WithEnvironmentVariables(
+            new Dictionary<string, string?>
+            {
+                ["KIMI_API_KEY"] = "global-kimi-key",
+                ["KIMI_BASE_URL"] = "https://kimi-proxy.example.com/coding/v1/"
+            },
+            () =>
+            {
+                var service = new AgentConfigurationService(config);
+                var options = service.BuildRuntimeOptions();
+                Assert.Equal("global-kimi-key", options.ApiKey);
+                Assert.Equal("https://kimi-proxy.example.com/coding/v1/", options.BaseUrl);
+            });
+    }
+
+    [Fact]
+    public void BuildRuntimeOptions_CanonicalHuggingFaceProvider_UsesHfTokenAlias()
+    {
+        var config = new AgentConfig
+        {
+            DefaultModel = "huggingface/moonshotai/Kimi-K2.5",
+            Providers =
+            [
+                new ProviderConfig
+                {
+                    Id = "huggingface",
+                    Api = ModelApiFormat.OpenAiCompletions,
+                    ApiKey = null,
+                    BaseUrl = "https://router.huggingface.co/v1/",
+                    Models =
+                    [
+                        new ModelConfig
+                        {
+                            Id = "moonshotai/Kimi-K2.5"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        WithEnvironmentVariables(
+            new Dictionary<string, string?>
+            {
+                ["HF_TOKEN"] = "hf-token-value"
+            },
+            () =>
+            {
+                var service = new AgentConfigurationService(config);
+                var options = service.BuildRuntimeOptions();
+                Assert.Equal("hf-token-value", options.ApiKey);
+            });
+    }
+
+    [Fact]
+    public void BuildRuntimeOptions_CanonicalGithubCopilotProvider_UsesGhTokenAlias()
+    {
+        var config = new AgentConfig
+        {
+            DefaultModel = "github-copilot/gpt-4o",
+            Providers =
+            [
+                new ProviderConfig
+                {
+                    Id = "github-copilot",
+                    Api = ModelApiFormat.OpenAiCompletions,
+                    ApiKey = null,
+                    BaseUrl = "https://api.individual.githubcopilot.com/",
+                    Models =
+                    [
+                        new ModelConfig
+                        {
+                            Id = "gpt-4o"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        WithEnvironmentVariables(
+            new Dictionary<string, string?>
+            {
+                ["GH_TOKEN"] = "gh-token-value"
+            },
+            () =>
+            {
+                var service = new AgentConfigurationService(config);
+                var options = service.BuildRuntimeOptions();
+                Assert.Equal("gh-token-value", options.ApiKey);
             });
     }
 
@@ -244,6 +460,226 @@ public sealed class AgentConfigurationServiceTests
     }
 
     [Fact]
+    public void BuildRuntimeOptions_CanonicalOpenAiProvider_UsesAccessTokenAlias()
+    {
+        var config = new AgentConfig
+        {
+            DefaultModel = "openai/gpt-4o-mini",
+            Providers =
+            [
+                new ProviderConfig
+                {
+                    Id = "openai",
+                    Api = ModelApiFormat.OpenAiCompletions,
+                    ApiKey = null,
+                    BaseUrl = "https://api.openai.com/v1/",
+                    Models =
+                    [
+                        new ModelConfig
+                        {
+                            Id = "gpt-4o-mini"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        WithEnvironmentVariables(
+            new Dictionary<string, string?>
+            {
+                ["OPENAI_ACCESS_TOKEN"] = "openai-access-token"
+            },
+            () =>
+            {
+                var service = new AgentConfigurationService(config);
+                var options = service.BuildRuntimeOptions();
+                Assert.Equal("openai-access-token", options.ApiKey);
+                Assert.IsType<CachingBearerCredentialProvider>(options.CredentialProvider);
+            });
+    }
+
+    [Fact]
+    public void BuildRuntimeOptions_CanonicalGoogleAntigravityProvider_UsesAntigravityAccessTokenAlias()
+    {
+        var config = new AgentConfig
+        {
+            DefaultModel = "google-antigravity/gemini-3-flash",
+            Providers =
+            [
+                new ProviderConfig
+                {
+                    Id = "google-antigravity",
+                    Api = ModelApiFormat.GoogleGeminiCli,
+                    ApiKey = null,
+                    BaseUrl = "https://daily-cloudcode-pa.sandbox.googleapis.com/",
+                    Models =
+                    [
+                        new ModelConfig
+                        {
+                            Id = "gemini-3-flash"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        WithEnvironmentVariables(
+            new Dictionary<string, string?>
+            {
+                ["ANTIGRAVITY_ACCESS_TOKEN"] = """{"token":"antigravity-token","projectId":"proj-42"}"""
+            },
+            () =>
+            {
+                var service = new AgentConfigurationService(config);
+                var options = service.BuildRuntimeOptions();
+                Assert.Equal("""{"token":"antigravity-token","projectId":"proj-42"}""", options.ApiKey);
+                Assert.IsType<CachingBearerCredentialProvider>(options.CredentialProvider);
+                Assert.Equal(ProviderApiKind.GoogleGeminiCli, options.Model.ApiKind);
+            });
+    }
+
+    [Fact]
+    public void BuildRuntimeOptions_CanonicalGoogleAntigravityProvider_UsesAuthStoreCredential()
+    {
+        var tempDir = CreateTempDirectory();
+        try
+        {
+            var authStorePath = AgentConfigurationService.DefaultAuthStorePath(tempDir);
+            var authStore = new OAuthCredentialStore();
+            var credential = """{"access":"antigravity-token","refresh":"refresh-token","expires":1730000000000,"projectId":"proj-42"}""";
+            authStore.SetCredential("google-antigravity", credential);
+            authStore.SaveToFile(authStorePath);
+
+            var config = new AgentConfig
+            {
+                DefaultModel = "google-antigravity/gemini-3-flash",
+                Providers =
+                [
+                    new ProviderConfig
+                    {
+                        Id = "google-antigravity",
+                        Api = ModelApiFormat.GoogleGeminiCli,
+                        ApiKey = null,
+                        BaseUrl = "https://daily-cloudcode-pa.sandbox.googleapis.com/",
+                        Models =
+                        [
+                            new ModelConfig
+                            {
+                                Id = "gemini-3-flash"
+                            }
+                        ]
+                    }
+                ]
+            };
+
+            var service = new AgentConfigurationService(config);
+            var options = service.BuildRuntimeOptions(agentDirectory: tempDir);
+            Assert.Equal(credential, options.ApiKey);
+            Assert.IsType<CachingBearerCredentialProvider>(options.CredentialProvider);
+            Assert.Equal(ProviderApiKind.GoogleGeminiCli, options.Model.ApiKind);
+        }
+        finally
+        {
+            TryDeleteDirectory(tempDir);
+        }
+    }
+
+    [Fact]
+    public void ValidateConfig_CanonicalGoogleAntigravityProvider_WithAuthStoreCredential_IsValid()
+    {
+        var tempDir = CreateTempDirectory();
+        try
+        {
+            var authStorePath = AgentConfigurationService.DefaultAuthStorePath(tempDir);
+            var authStore = new OAuthCredentialStore();
+            authStore.SetCredential(
+                "google-antigravity",
+                """{"access":"antigravity-token","refresh":"refresh-token","expires":1730000000000,"projectId":"proj-42"}""");
+            authStore.SaveToFile(authStorePath);
+
+            var config = new AgentConfig
+            {
+                DefaultModel = "google-antigravity/gemini-3-flash",
+                Providers =
+                [
+                    new ProviderConfig
+                    {
+                        Id = "google-antigravity",
+                        Api = ModelApiFormat.GoogleGeminiCli,
+                        ApiKey = null,
+                        BaseUrl = "https://daily-cloudcode-pa.sandbox.googleapis.com/",
+                        Models =
+                        [
+                            new ModelConfig
+                            {
+                                Id = "gemini-3-flash"
+                            }
+                        ]
+                    }
+                ]
+            };
+
+            var service = new AgentConfigurationService(config);
+            var validation = service.ValidateConfig(agentDirectory: tempDir);
+            Assert.True(validation.IsValid);
+        }
+        finally
+        {
+            TryDeleteDirectory(tempDir);
+        }
+    }
+
+    [Fact]
+    public void BuildRuntimeOptions_AccessTokenJsonEnvelope_ProducesHeadersAndRefreshesAfterExpiry()
+    {
+        var config = new AgentConfig
+        {
+            DefaultModel = "my-provider/model-a",
+            Providers =
+            [
+                new ProviderConfig
+                {
+                    Id = "my-provider",
+                    Api = ModelApiFormat.OpenAiCompletions,
+                    ApiKey = null,
+                    BaseUrl = "https://example.com/v1/",
+                    Models =
+                    [
+                        new ModelConfig
+                        {
+                            Id = "model-a"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        var envName = "SHARP_MY_PROVIDER_ACCESS_TOKEN";
+        var expired = DateTimeOffset.UtcNow.AddMinutes(-10);
+        WithEnvironmentVariables(
+            new Dictionary<string, string?>
+            {
+                [envName] = $"{{\"access_token\":\"token-1\",\"expires_at\":\"{expired:O}\"}}"
+            },
+            () =>
+            {
+                var service = new AgentConfigurationService(config);
+                var options = service.BuildRuntimeOptions();
+                using var credentialProvider = Assert.IsType<CachingBearerCredentialProvider>(options.CredentialProvider);
+
+                var context = new LlmCredentialContext(options.Model, options.BaseUrl);
+                var firstHeaders = credentialProvider.GetHeadersAsync(context).AsTask().GetAwaiter().GetResult();
+                Assert.Equal("Bearer token-1", firstHeaders["Authorization"]);
+
+                Environment.SetEnvironmentVariable(
+                    envName,
+                    """{"access_token":"token-2","expires_in":3600}""");
+                var secondHeaders = credentialProvider.GetHeadersAsync(context).AsTask().GetAwaiter().GetResult();
+                Assert.Equal("Bearer token-2", secondHeaders["Authorization"]);
+            });
+    }
+
+    [Fact]
     public void BuildRuntimeOptions_PropagatesResourceLoadingOptions()
     {
         var config = new AgentConfig
@@ -352,6 +788,41 @@ public sealed class AgentConfigurationServiceTests
             var service = AgentConfigurationService.LoadFromFile(path);
             var options = service.BuildRuntimeOptions();
             Assert.Equal(ProviderApiKind.OpenAiResponses, options.Model.ApiKind);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void LoadFromFile_ParsesGoogleAntigravityApiFormat()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"sharp-config-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path,
+                """
+                {
+                  "defaultModel": "google-antigravity/gemini-3-flash",
+                  "providers": [
+                    {
+                      "id": "google-antigravity",
+                      "api": "google-gemini-cli",
+                      "apiKey": "{\"token\":\"test-token\",\"projectId\":\"proj-1\"}",
+                      "baseUrl": "https://daily-cloudcode-pa.sandbox.googleapis.com/",
+                      "models": [
+                        { "id": "gemini-3-flash" }
+                      ]
+                    }
+                  ]
+                }
+                """);
+
+            var service = AgentConfigurationService.LoadFromFile(path);
+            var options = service.BuildRuntimeOptions();
+            Assert.Equal(ProviderApiKind.GoogleGeminiCli, options.Model.ApiKind);
         }
         finally
         {
@@ -797,6 +1268,44 @@ public sealed class AgentConfigurationServiceTests
             });
     }
 
+    [Fact]
+    public void ValidateConfig_MissingDefaultProviderApiKey_WithAccessTokenOverride_IsValid()
+    {
+        var config = new AgentConfig
+        {
+            DefaultModel = "my-provider/model-a",
+            Providers =
+            [
+                new ProviderConfig
+                {
+                    Id = "my-provider",
+                    Api = ModelApiFormat.OpenAiCompletions,
+                    ApiKey = null,
+                    BaseUrl = "https://example.com/v1/",
+                    Models =
+                    [
+                        new ModelConfig
+                        {
+                            Id = "model-a"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        WithEnvironmentVariables(
+            new Dictionary<string, string?>
+            {
+                ["SHARP_MY_PROVIDER_ACCESS_TOKEN"] = "env-access-token"
+            },
+            () =>
+            {
+                var service = new AgentConfigurationService(config);
+                var validation = service.ValidateConfig();
+                Assert.True(validation.IsValid);
+            });
+    }
+
     private static OpenAiCompletionsCompat BuildOpenAiCompletionsCompat(
         string providerId,
         string baseUrl,
@@ -853,6 +1362,26 @@ public sealed class AgentConfigurationServiceTests
                 foreach (var pair in previous)
                     Environment.SetEnvironmentVariable(pair.Key, pair.Value);
             }
+        }
+    }
+
+    private static string CreateTempDirectory()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"sharpagent-tests-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(path);
+        return path;
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+                Directory.Delete(path, recursive: true);
+        }
+        catch
+        {
+            // Best-effort cleanup.
         }
     }
 }

@@ -1,0 +1,23 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Sharp.Gui.App"
+             xmlns:local="using:Sharp.Gui"
+             xmlns:converters="using:Sharp.Gui.Converters"
+             RequestedThemeVariant="Dark">
+             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
+
+    <Application.Resources>
+        <converters:BoolToExpandIconConverter x:Key="BoolToExpandIconConverter"/>
+        <converters:BrushToTransparentBrushConverter x:Key="BrushToTransparentBrushConverter"/>
+        <converters:BoolToAlignmentConverter x:Key="BoolToAlignmentConverter"/>
+        <converters:BoolToBrushConverter x:Key="BoolToBrushConverter"/>
+    </Application.Resources>
+
+    <Application.DataTemplates>
+        <local:ViewLocator/>
+    </Application.DataTemplates>
+
+    <Application.Styles>
+        <FluentTheme />
+    </Application.Styles>
+</Application>

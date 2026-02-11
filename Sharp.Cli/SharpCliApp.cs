@@ -65,12 +65,27 @@ internal static class SharpCliApp
 
     private static int RunModels(CliOptions options)
     {
-        var configService = AgentConfigurationService.LoadFromFile(options.ConfigPath);
+        var configService = LoadConfigService(options);
         var models = configService.GetAvailableModels();
         foreach (var model in models)
             Console.WriteLine(model);
 
         return 0;
+    }
+
+    private static AgentConfigurationService LoadConfigService(CliOptions options)
+    {
+        // If explicit path provided, use it; otherwise discover (CWD -> agent dir)
+        return options.ConfigPath is not null
+            ? AgentConfigurationService.LoadFromFile(options.ConfigPath)
+            : AgentConfigurationService.LoadFromFile();
+    }
+
+    private static string GetEffectiveConfigPath(CliOptions options)
+    {
+        // Returns the path that would be used for config operations
+        return options.ConfigPath
+            ?? Path.Combine(Directory.GetCurrentDirectory(), "config.json");
     }
 
     private static int RunConfig(CliOptions options, IReadOnlyList<string> positionals)
@@ -97,7 +112,7 @@ internal static class SharpCliApp
         if (options.JsonOutput)
             throw new CliUsageException("--json is only supported for 'config validate'");
 
-        var path = options.ConfigPath;
+        var path = GetEffectiveConfigPath(options);
         var exists = File.Exists(path);
         if (exists && !options.Force)
             throw new CliUsageException($"Config already exists at '{path}'. Use --force to overwrite.");
@@ -118,7 +133,7 @@ internal static class SharpCliApp
         if (positionals.Count > 0)
             throw new CliUsageException("config validate does not accept positional arguments");
 
-        var path = options.ConfigPath;
+        var path = GetEffectiveConfigPath(options);
         if (!File.Exists(path))
         {
             if (options.JsonOutput)
@@ -138,7 +153,9 @@ internal static class SharpCliApp
         AgentConfigurationService service;
         try
         {
-            service = AgentConfigurationService.LoadFromFile(path);
+            service = options.ConfigPath is not null
+                ? AgentConfigurationService.LoadFromFile(options.ConfigPath)
+                : AgentConfigurationService.LoadFromFile();
         }
         catch (Exception ex) when (ex is JsonException or IOException)
         {
@@ -354,7 +371,7 @@ internal static class SharpCliApp
 
     private static AgentRuntimeOptions BuildRuntimeOptions(CliOptions options)
     {
-        var configService = AgentConfigurationService.LoadFromFile(options.ConfigPath);
+        var configService = LoadConfigService(options);
         try
         {
             Action<string>? debugLog = null;
@@ -374,8 +391,9 @@ internal static class SharpCliApp
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("Missing API key", StringComparison.Ordinal))
         {
+            var configPath = options.ConfigPath ?? $"{Directory.GetCurrentDirectory()}/config.json or {AgentConfigurationService.DefaultAgentDirectory()}/config.json";
             throw new CliUsageException(
-                $"{ex.Message}. Set OPENAI_API_KEY/ANTHROPIC_API_KEY or update config at '{options.ConfigPath}'.");
+                $"{ex.Message}. Set OPENAI_API_KEY/ANTHROPIC_API_KEY or update config at '{configPath}'.");
         }
     }
 

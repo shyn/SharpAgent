@@ -40,87 +40,142 @@ public sealed class OpenAiResponsesLlmProvider : ILlmProvider
         var payloadElement = JsonSerializer.SerializeToElement(payload, JsonDefaults.Options);
         request.OnPayload?.Invoke(payloadElement);
 
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "responses")
+        var payloadJson = payloadElement.GetRawText();
+        HttpRequestMessage CreateHttpRequest()
         {
-            Content = new StringContent(payloadElement.GetRawText(), Encoding.UTF8, "application/json")
-        };
+            var httpRequest = new HttpRequestMessage(HttpMethod.Post, "responses")
+            {
+                Content = new StringContent(payloadJson, Encoding.UTF8, "application/json")
+            };
 
-        var requestUrl = ResolveRequestUri(httpRequest, "responses");
+            if (!string.IsNullOrWhiteSpace(request.SessionId))
+                httpRequest.Headers.TryAddWithoutValidation("x-session-id", request.SessionId);
 
-        if (!string.IsNullOrWhiteSpace(request.SessionId))
-            httpRequest.Headers.TryAddWithoutValidation("x-session-id", request.SessionId);
+            ApplyHeaders(httpRequest, request.Headers);
+            return httpRequest;
+        }
 
-        ApplyHeaders(httpRequest, request.Headers);
+        using var debugRequest = CreateHttpRequest();
+        var requestUrl = ResolveRequestUri(debugRequest, "responses");
         Debug($"request.url={requestUrl}");
         Debug($"request.messages={request.Messages.Count} tools={request.Tools.Count}");
-        Debug($"request.headers={FormatRequestHeaders(httpRequest)}");
-        Debug($"request.payload={Truncate(payloadElement.GetRawText())}");
+        Debug($"request.headers={FormatRequestHeaders(debugRequest)}");
+        Debug($"request.payload={Truncate(payloadJson)}");
 
+        const int maxAttempts = 3;
         HttpResponseMessage? response = null;
-        LlmErrorEvent? transportError = null;
-        try
+        LlmErrorEvent? terminalError = null;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            transportError = new LlmErrorEvent("OpenAI request was aborted", LlmErrorCategory.Aborted, Retryable: true);
-        }
-        catch (TaskCanceledException)
-        {
-            transportError = new LlmErrorEvent("OpenAI request timed out", LlmErrorCategory.Timeout, Retryable: true);
-        }
-        catch (HttpRequestException ex)
-        {
-            transportError = new LlmErrorEvent($"OpenAI network error: {ex.Message}", LlmErrorCategory.Network, Retryable: true);
+            using var httpRequest = CreateHttpRequest();
+            try
+            {
+                response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                terminalError = new LlmErrorEvent("OpenAI request was aborted", LlmErrorCategory.Aborted, Retryable: true);
+                break;
+            }
+            catch (TaskCanceledException)
+            {
+                if (attempt < maxAttempts)
+                {
+                    var delayMs = ComputeRetryDelayMs(attempt, null, request.MaxRetryDelayMs);
+                    Debug($"request.retry attempt={attempt + 1} reason=timeout delay_ms={delayMs}");
+                    await Task.Delay(delayMs, ct);
+                    continue;
+                }
+
+                terminalError = new LlmErrorEvent("OpenAI request timed out", LlmErrorCategory.Timeout, Retryable: true);
+                break;
+            }
+            catch (HttpRequestException ex)
+            {
+                if (attempt < maxAttempts)
+                {
+                    var delayMs = ComputeRetryDelayMs(attempt, null, request.MaxRetryDelayMs);
+                    Debug($"request.retry attempt={attempt + 1} reason=network delay_ms={delayMs}");
+                    await Task.Delay(delayMs, ct);
+                    continue;
+                }
+
+                terminalError = new LlmErrorEvent($"OpenAI network error: {ex.Message}", LlmErrorCategory.Network, Retryable: true);
+                break;
+            }
+
+            var safeAttemptResponse = response!;
+            Debug($"response.status={(int)safeAttemptResponse.StatusCode}");
+            Debug($"response.headers={FormatResponseHeaders(safeAttemptResponse)}");
+
+            if (safeAttemptResponse.IsSuccessStatusCode)
+                break;
+
+            var body = await safeAttemptResponse.Content.ReadAsStringAsync(ct);
+            var statusCode = (int)safeAttemptResponse.StatusCode;
+            var category = ClassifyStatusCode(statusCode);
+            var retryable = IsRetryableStatusCode(statusCode);
+            Debug($"response.body={Truncate(body)}");
+
+            if (LlmErrorSemantics.TryCreateContextOverflowError("OpenAI", statusCode, body, out var overflowError))
+            {
+                terminalError = overflowError;
+                safeAttemptResponse.Dispose();
+                response = null;
+                break;
+            }
+
+            var hasRetryAfter = TryGetRetryAfterSeconds(safeAttemptResponse, out var retryAfterSeconds);
+            if (request.MaxRetryDelayMs is > 0
+                && hasRetryAfter
+                && retryAfterSeconds * 1000 > request.MaxRetryDelayMs)
+            {
+                terminalError = new LlmErrorEvent(
+                    $"OpenAI requested retry-after {retryAfterSeconds}s, above cap {request.MaxRetryDelayMs}ms",
+                    LlmErrorCategory.RateLimit,
+                    statusCode,
+                    Retryable: true);
+                safeAttemptResponse.Dispose();
+                response = null;
+                break;
+            }
+
+            if (retryable && attempt < maxAttempts)
+            {
+                var delayMs = ComputeRetryDelayMs(attempt, hasRetryAfter ? retryAfterSeconds : null, request.MaxRetryDelayMs);
+                Debug($"request.retry attempt={attempt + 1} reason=http_{statusCode} delay_ms={delayMs}");
+                safeAttemptResponse.Dispose();
+                response = null;
+                await Task.Delay(delayMs, ct);
+                continue;
+            }
+
+            _logger.LogError("OpenAI responses request failed: HTTP {Status} {Body}", statusCode, body);
+            terminalError = new LlmErrorEvent(
+                $"OpenAI request failed with HTTP {statusCode}: {body}",
+                category,
+                statusCode,
+                retryable);
+            safeAttemptResponse.Dispose();
+            response = null;
+            break;
         }
 
-        if (transportError != null)
+        if (terminalError != null)
         {
-            Debug($"transport.error={transportError.Message} category={transportError.Category}");
-            yield return transportError;
+            Debug($"transport.error={terminalError.Message} category={terminalError.Category}");
+            yield return terminalError;
             yield break;
         }
 
         var safeResponse = response!;
         using (safeResponse)
         {
-            Debug($"response.status={(int)safeResponse.StatusCode}");
-            Debug($"response.headers={FormatResponseHeaders(safeResponse)}");
-
-            if (!safeResponse.IsSuccessStatusCode)
-            {
-                var body = await safeResponse.Content.ReadAsStringAsync(ct);
-                var statusCode = (int)safeResponse.StatusCode;
-                var category = ClassifyStatusCode(statusCode);
-                var retryable = IsRetryableStatusCode(statusCode);
-                Debug($"response.body={Truncate(body)}");
-
-                if (request.MaxRetryDelayMs is > 0
-                    && TryGetRetryAfterSeconds(safeResponse, out var retryAfterSeconds)
-                    && retryAfterSeconds * 1000 > request.MaxRetryDelayMs)
-                {
-                    yield return new LlmErrorEvent(
-                        $"OpenAI requested retry-after {retryAfterSeconds}s, above cap {request.MaxRetryDelayMs}ms",
-                        LlmErrorCategory.RateLimit,
-                        statusCode,
-                        Retryable: true);
-                    yield break;
-                }
-
-                _logger.LogError("OpenAI responses request failed: HTTP {Status} {Body}", statusCode, body);
-                yield return new LlmErrorEvent(
-                    $"OpenAI request failed with HTTP {statusCode}: {body}",
-                    category,
-                    statusCode,
-                    retryable);
-                yield break;
-            }
-
             await using var stream = await safeResponse.Content.ReadAsStreamAsync(ct);
             using var reader = new StreamReader(stream);
 
-            var state = new StreamState();
+            var state = new StreamState(request.Model.Pricing);
             LlmErrorEvent? streamError = null;
 
             string? line;
@@ -227,6 +282,21 @@ public sealed class OpenAiResponsesLlmProvider : ILlmProvider
         return false;
     }
 
+    private static int ComputeRetryDelayMs(int attempt, int? retryAfterSeconds, int? maxRetryDelayMs)
+    {
+        var exponentialMs = Math.Min(8000, 500 * (1 << (attempt - 1)));
+        var jitterMs = Random.Shared.Next(0, 250);
+        var delayMs = exponentialMs + jitterMs;
+
+        if (retryAfterSeconds is > 0)
+            delayMs = Math.Max(delayMs, retryAfterSeconds.Value * 1000);
+
+        if (maxRetryDelayMs is > 0)
+            delayMs = Math.Min(delayMs, maxRetryDelayMs.Value);
+
+        return Math.Max(0, delayMs);
+    }
+
     private static LlmErrorCategory ClassifyStatusCode(int statusCode)
     {
         return statusCode switch
@@ -310,7 +380,8 @@ public sealed class OpenAiResponsesLlmProvider : ILlmProvider
 
     private static OpenAiResponsesRequest BuildRequestPayload(LlmRequest request)
     {
-        var normalizedMessages = MessageTransforms.EnsureToolResultContinuity(request.Messages);
+        var normalizedMessages = MessageTransforms.DropIncompleteAssistantTurns(request.Messages);
+        normalizedMessages = MessageTransforms.EnsureToolResultContinuity(normalizedMessages);
         var input = BuildInput(request.SystemPrompt, normalizedMessages);
 
         return new OpenAiResponsesRequest
@@ -404,6 +475,7 @@ public sealed class OpenAiResponsesLlmProvider : ILlmProvider
                 case LlmMessageRole.Assistant:
                 {
                     var textParts = new List<string>();
+                    var reasoningItems = new List<JsonElement>();
                     foreach (var block in message.Content)
                     {
                         switch (block)
@@ -411,11 +483,31 @@ public sealed class OpenAiResponsesLlmProvider : ILlmProvider
                             case TextContentBlock text:
                                 textParts.Add(text.Text);
                                 break;
-                            case ThinkingContentBlock thinking when !string.IsNullOrWhiteSpace(thinking.Text):
-                                textParts.Add($"<thinking>\n{thinking.Text}\n</thinking>");
+                            case ThinkingContentBlock thinking:
+                                if (!string.IsNullOrWhiteSpace(thinking.Signature)
+                                    && ThinkingSignatureInterop.TryNormalizeOpenAiReasoningItem(
+                                        thinking.Signature,
+                                        out var reasoningItem,
+                                        out _))
+                                {
+                                    reasoningItems.Add(reasoningItem);
+                                    break;
+                                }
+
+                                if (!string.IsNullOrWhiteSpace(thinking.Text))
+                                    textParts.Add($"<thinking>\n{thinking.Text}\n</thinking>");
                                 break;
                         }
                     }
+
+                    var toolCalls = message.Content.OfType<ToolCallContentBlock>().ToList();
+                    // Treat "signature-only" assistant turns as aborted/incomplete history and skip replay.
+                    // These turns can cause OpenAI Responses to reject the request with orphaned reasoning items.
+                    if (reasoningItems.Count > 0 && textParts.Count == 0 && toolCalls.Count == 0)
+                        break;
+
+                    foreach (var reasoningItem in reasoningItems)
+                        input.Add(reasoningItem);
 
                     var assistantText = string.Join("\n", textParts.Where(x => !string.IsNullOrWhiteSpace(x)));
                     if (!string.IsNullOrWhiteSpace(assistantText))
@@ -427,7 +519,7 @@ public sealed class OpenAiResponsesLlmProvider : ILlmProvider
                         });
                     }
 
-                    foreach (var call in message.Content.OfType<ToolCallContentBlock>())
+                    foreach (var call in toolCalls)
                     {
                         var callId = ResolveCallId(call.ToolCallId, callIdMap, ref nextCallIndex);
                         input.Add(new
@@ -664,7 +756,7 @@ public sealed class OpenAiResponsesLlmProvider : ILlmProvider
                 {
                     if (TryGetProperty(root, "response", out var response))
                     {
-                        state.Usage = ParseUsage(response);
+                        state.Usage = ParseUsage(response, state.Pricing);
                         state.StopReason = ParseStopReason(response, state);
                     }
 
@@ -721,7 +813,7 @@ public sealed class OpenAiResponsesLlmProvider : ILlmProvider
         return itemKey;
     }
 
-    private static Usage? ParseUsage(JsonElement response)
+    private static Usage? ParseUsage(JsonElement response, ModelPricing? pricing)
     {
         if (!TryGetProperty(response, "usage", out var usage))
             return null;
@@ -736,12 +828,13 @@ public sealed class OpenAiResponsesLlmProvider : ILlmProvider
         if (inputTokens <= 0 && outputTokens <= 0 && cacheReadTokens <= 0)
             return null;
 
-        return new Usage(
+        var value = new Usage(
             InputTokens: inputTokens,
             OutputTokens: outputTokens,
             CacheReadTokens: cacheReadTokens,
             CacheWriteTokens: 0,
             Cost: new CostBreakdown(0, 0, 0, 0, 0));
+        return UsageCostCalculator.AttachCost(value, pricing);
     }
 
     private static LlmStopReason ParseStopReason(JsonElement response, StreamState state)
@@ -802,11 +895,17 @@ public sealed class OpenAiResponsesLlmProvider : ILlmProvider
 
     private sealed class StreamState
     {
+        public StreamState(ModelPricing? pricing)
+        {
+            Pricing = pricing;
+        }
+
         public StringBuilder TextBuilder { get; } = new();
         public StringBuilder ThinkingBuilder { get; } = new();
         public Dictionary<string, MutableToolCall> ToolCalls { get; } = new(StringComparer.Ordinal);
         public HashSet<string> CompletedToolIds { get; } = new(StringComparer.Ordinal);
         public Usage? Usage { get; set; }
+        public ModelPricing? Pricing { get; }
         public string? ThinkingSignature { get; set; }
         public bool ThinkingStarted { get; set; }
         public int NextToolIndex { get; set; }

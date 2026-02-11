@@ -144,7 +144,11 @@ public sealed class AgentSession : IDisposable, IExtensionRuntimeHost
             }
         }
 
-        var provider = LlmProviderFactory.Create(options.Model, options.ApiKey, options.BaseUrl);
+        var provider = LlmProviderFactory.Create(
+            options.Model,
+            options.ApiKey,
+            options.BaseUrl,
+            options.CredentialProvider);
         var sessionManager = await SessionManager.CreateAsync(
             options.SessionDirectory,
             options.WorkingDirectory,

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Sharp.AI;
 using Sharp.Core.Extensions;
 
@@ -37,9 +38,22 @@ public sealed class ToolRuntime
             return ToolInvocationResult.Text($"Tool '{call.Name}' is not registered", isError: true);
         }
 
+        if (!TryParseArguments(call.ArgumentsJson, out var args, out var parseError))
+        {
+            return ToolInvocationResult.Text(
+                $"Tool arguments parse failed for '{call.Name}': {parseError}",
+                isError: true);
+        }
+
         try
         {
-            var args = ParseJson(call.ArgumentsJson);
+            if (!ToolArgumentsValidator.TryValidate(tool.ParametersSchema, args, out var validationError))
+            {
+                return ToolInvocationResult.Text(
+                    $"Tool arguments validation failed for '{call.Name}': {validationError}",
+                    isError: true);
+            }
+
             if (_extensionRuntime != null)
             {
                 var decision = await _extensionRuntime.EmitToolCallAsync(
@@ -62,7 +76,6 @@ public sealed class ToolRuntime
         }
         catch (Exception ex)
         {
-            var args = ParseJson(call.ArgumentsJson);
             var result = ToolInvocationResult.Text($"Tool execution failed: {ex.Message}", isError: true);
             if (_extensionRuntime == null)
                 return result;
@@ -73,15 +86,27 @@ public sealed class ToolRuntime
         }
     }
 
-    private static System.Text.Json.JsonElement ParseJson(string json)
+    private static bool TryParseArguments(string rawJson, out JsonElement arguments, out string error)
     {
+        arguments = default;
+        error = string.Empty;
+
         try
         {
-            return System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(json, JsonDefaults.Options);
+            using var doc = JsonDocument.Parse(rawJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                error = $"arguments must be a JSON object, got '{doc.RootElement.ValueKind}'.";
+                return false;
+            }
+
+            arguments = doc.RootElement.Clone();
+            return true;
         }
-        catch (System.Text.Json.JsonException)
+        catch (JsonException ex)
         {
-            return System.Text.Json.JsonSerializer.SerializeToElement(new { });
+            error = ex.Message;
+            return false;
         }
     }
 }
