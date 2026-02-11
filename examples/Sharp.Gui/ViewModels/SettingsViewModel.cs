@@ -426,12 +426,12 @@ public partial class SettingsViewModel : ViewModelBase
                     ThinkingFormat = source.Compat.ThinkingFormat,
                     OpenRouterRouting = source.Compat.OpenRouterRouting == null
                         ? null
-                        : new Sharp.AI.OpenAiRoutingPreferences(
+                        : new OpenAiRoutingPreferences(
                             source.Compat.OpenRouterRouting.Only?.ToArray(),
                             source.Compat.OpenRouterRouting.Order?.ToArray()),
                     VercelGatewayRouting = source.Compat.VercelGatewayRouting == null
                         ? null
-                        : new Sharp.AI.OpenAiRoutingPreferences(
+                        : new OpenAiRoutingPreferences(
                             source.Compat.VercelGatewayRouting.Only?.ToArray(),
                             source.Compat.VercelGatewayRouting.Order?.ToArray())
                 },
@@ -556,12 +556,12 @@ public sealed class ProviderEntryViewModel
                     ThinkingFormat = source.Compat.ThinkingFormat,
                     OpenRouterRouting = source.Compat.OpenRouterRouting == null
                         ? null
-                        : new Sharp.AI.OpenAiRoutingPreferences(
+                        : new OpenAiRoutingPreferences(
                             source.Compat.OpenRouterRouting.Only?.ToArray(),
                             source.Compat.OpenRouterRouting.Order?.ToArray()),
                     VercelGatewayRouting = source.Compat.VercelGatewayRouting == null
                         ? null
-                        : new Sharp.AI.OpenAiRoutingPreferences(
+                        : new OpenAiRoutingPreferences(
                             source.Compat.VercelGatewayRouting.Only?.ToArray(),
                             source.Compat.VercelGatewayRouting.Order?.ToArray())
                 },

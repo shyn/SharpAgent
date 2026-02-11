@@ -24,7 +24,7 @@ public sealed class BashTool : IAgentTool
                 timeout = new { type = "integer", description = $"Timeout in seconds (default: {DefaultTimeoutSeconds})" }
             },
             required = new[] { "command" }
-        }, Sharp.AI.JsonDefaults.Options);
+        }, JsonDefaults.Options);
     }
 
     public string Name => "bash";

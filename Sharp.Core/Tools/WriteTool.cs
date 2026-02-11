@@ -21,7 +21,7 @@ public sealed class WriteTool : IAgentTool
                 content = new { type = "string", description = "File content" }
             },
             required = new[] { "path", "content" }
-        }, Sharp.AI.JsonDefaults.Options);
+        }, JsonDefaults.Options);
     }
 
     public string Name => "write";
