@@ -574,7 +574,7 @@ public sealed class AgentConfigurationServiceTests
 
             var service = new AgentConfigurationService(config);
             var options = service.BuildRuntimeOptions(agentDirectory: tempDir);
-            Assert.Equal(credential, options.ApiKey);
+            Assert.Equal("antigravity-token", options.ApiKey);
             Assert.IsType<CachingBearerCredentialProvider>(options.CredentialProvider);
             Assert.Equal(ProviderApiKind.GoogleGeminiCli, options.Model.ApiKind);
         }
