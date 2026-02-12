@@ -11,6 +11,7 @@
         <converters:BrushToTransparentBrushConverter x:Key="BrushToTransparentBrushConverter"/>
         <converters:BoolToAlignmentConverter x:Key="BoolToAlignmentConverter"/>
         <converters:BoolToBrushConverter x:Key="BoolToBrushConverter"/>
+        <converters:BoolToOpacityConverter x:Key="BoolToOpacityConverter"/>
     </Application.Resources>
 
     <Application.DataTemplates>

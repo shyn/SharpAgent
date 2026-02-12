@@ -121,7 +121,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var runtimeOptions = _configService.BuildRuntimeOptions(
             modelString: SelectedModel,
-            thinkingLevel: SelectedThinkingLevel);
+            thinkingLevel: SelectedThinkingLevel,
+            workingDirectory: Chat.WorkspacePath);
 
         await Chat.InitializeAsync(runtimeOptions);
         Title = $"Sharp Agent — {runtimeOptions.Model.ProviderId}/{runtimeOptions.Model.ModelId}";

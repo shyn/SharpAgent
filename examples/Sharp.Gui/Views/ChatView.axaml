@@ -14,46 +14,82 @@
                 Padding="12"
                 BorderThickness="0,1,0,0"
                 BorderBrush="#2d2d4a">
-            <DockPanel>
-                <!-- Cancel Button -->
-                <Button DockPanel.Dock="Right"
-                        Content="✕"
-                        Command="{Binding CancelCommand}"
-                        IsVisible="{Binding IsProcessing}"
-                        Margin="8,0,0,0"
-                        Padding="10,8"
-                        Background="#7f1d1d"
-                        Foreground="#fca5a5"
-                        CornerRadius="8"
-                        VerticalAlignment="Bottom"/>
+            <StackPanel Spacing="8">
+                <DockPanel>
+                    <!-- Cancel Button -->
+                    <Button DockPanel.Dock="Right"
+                            Content="✕"
+                            Command="{Binding CancelCommand}"
+                            IsVisible="{Binding IsProcessing}"
+                            Margin="8,0,0,0"
+                            Padding="10,8"
+                            Background="#7f1d1d"
+                            Foreground="#fca5a5"
+                            CornerRadius="8"
+                            VerticalAlignment="Bottom"/>
 
-                <!-- Send Button -->
-                <Button DockPanel.Dock="Right"
-                        Content="Send"
-                        Command="{Binding SendCommand}"
-                        Margin="8,0,0,0"
-                        Padding="16,8"
-                        Background="#3b82f6"
-                        Foreground="White"
-                        CornerRadius="8"
-                        FontWeight="SemiBold"
-                        VerticalAlignment="Bottom"/>
+                    <!-- Send Button -->
+                    <Button DockPanel.Dock="Right"
+                            Content="Send"
+                            Command="{Binding SendCommand}"
+                            Margin="8,0,0,0"
+                            Padding="16,8"
+                            Background="#3b82f6"
+                            Foreground="White"
+                            CornerRadius="8"
+                            FontWeight="SemiBold"
+                            VerticalAlignment="Bottom"/>
 
-                <!-- Input TextBox -->
-                <TextBox x:Name="InputTextBox"
-                         Text="{Binding InputText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                         Watermark="Type your message... (Enter for new line, Shift+Enter to send)"
-                         AcceptsReturn="True"
-                         TextWrapping="Wrap"
-                         MaxHeight="120"
-                         Background="#16213e"
-                         Foreground="#e2e8f0"
-                         CornerRadius="8"
-                         Padding="12,8"
-                         BorderBrush="#2d2d4a"
-                         BorderThickness="1"
-                         FontSize="14"/>
-            </DockPanel>
+                    <!-- Input TextBox -->
+                    <TextBox x:Name="InputTextBox"
+                             Text="{Binding InputText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             Watermark="Type your message... (Enter for new line, ⌘+Enter or Shift+Enter to send)"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
+                             MaxHeight="120"
+                             Background="#16213e"
+                             Foreground="#e2e8f0"
+                             CornerRadius="8"
+                             Padding="12,8"
+                             BorderBrush="#2d2d4a"
+                             BorderThickness="1"
+                             FontSize="14"/>
+                </DockPanel>
+
+                <!-- Workspace Indicator -->
+                <Border Background="#16213e"
+                        CornerRadius="6"
+                        Padding="8,6"
+                        BorderBrush="#2d2d4a"
+                        BorderThickness="1"
+                        Opacity="{Binding CanChangeWorkspace, Converter={StaticResource BoolToOpacityConverter}}">
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right"
+                                Content="Browse..."
+                                Command="{Binding BrowseWorkspaceCommand}"
+                                Padding="8,4"
+                                FontSize="11"
+                                Background="#1e3a5f"
+                                Foreground="#60a5fa"
+                                CornerRadius="4"/>
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <TextBlock Text="📁"
+                                       FontSize="12"
+                                       VerticalAlignment="Center"/>
+                            <TextBlock Text="Workspace:"
+                                       Foreground="#94a3b8"
+                                       FontSize="11"
+                                       VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding WorkspacePath}"
+                                       Foreground="#e2e8f0"
+                                       FontSize="11"
+                                       FontFamily="Consolas, Monaco, monospace"
+                                       VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+            </StackPanel>
         </Border>
 
         <!-- Messages List -->

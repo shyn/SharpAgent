@@ -10,10 +10,33 @@ using Sharp.Core.Sessions;
 
 namespace Sharp.Gui.ViewModels;
 
+public interface IAsyncInteraction<TInput, TOutput>
+{
+    Task<TOutput> HandleAsync(TInput input);
+}
+
+public class FolderBrowserInteraction : IAsyncInteraction<string?, string?>
+{
+    private Func<string?, Task<string?>>? _handler;
+
+    public void RegisterHandler(Func<string?, Task<string?>> handler)
+    {
+        _handler = handler;
+    }
+
+    public Task<string?> HandleAsync(string? input)
+    {
+        return _handler?.Invoke(input) ?? Task.FromResult<string?>(null);
+    }
+}
+
 public partial class ChatViewModel : ViewModelBase
 {
     private AgentSession? _session;
     private CancellationTokenSource? _cts;
+    private string _initialWorkingDirectory = Directory.GetCurrentDirectory();
+
+    public IAsyncInteraction<string?, string?> BrowseWorkspaceInteraction { get; set; } = new FolderBrowserInteraction();
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SendCommand))]
@@ -32,11 +55,29 @@ public partial class ChatViewModel : ViewModelBase
     [ObservableProperty]
     private bool _hasHistory;
 
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(BrowseWorkspaceCommand))]
+    private string _workspacePath = Directory.GetCurrentDirectory();
+
+    public bool CanChangeWorkspace => !HasHistory && !IsProcessing;
+
     public ObservableCollection<ChatMessageViewModel> Messages { get; } = [];
+
+    partial void OnHasHistoryChanged(bool value)
+    {
+        BrowseWorkspaceCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnIsProcessingChanged(bool value)
+    {
+        BrowseWorkspaceCommand.NotifyCanExecuteChanged();
+    }
 
     public async Task InitializeAsync(AgentRuntimeOptions runtimeOptions, CancellationToken ct = default)
     {
         StatusText = "Initializing session...";
+        _initialWorkingDirectory = runtimeOptions.WorkingDirectory;
+        WorkspacePath = runtimeOptions.WorkingDirectory;
         _session = await AgentSession.CreateAsync(runtimeOptions, ct: ct);
         StatusText = $"Model: {_session.Model.ProviderId}/{_session.Model.ModelId}";
         RefreshCommandStates();
@@ -317,6 +358,16 @@ public partial class ChatViewModel : ViewModelBase
     {
         _session?.Abort();
         _cts?.Cancel();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanChangeWorkspace))]
+    private async Task BrowseWorkspaceAsync()
+    {
+        var result = await BrowseWorkspaceInteraction.HandleAsync(WorkspacePath);
+        if (!string.IsNullOrEmpty(result))
+        {
+            WorkspacePath = result;
+        }
     }
 
     public void Dispose()
