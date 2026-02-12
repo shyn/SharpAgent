@@ -8,4 +8,6 @@ public sealed record ModelDescriptor(
     int? MaxOutputTokens = null,
     OpenAiCompletionsCompat? OpenAiCompletionsCompat = null,
     ModelCapabilities? Capabilities = null,
-    ModelPricing? Pricing = null);
+    ModelPricing? Pricing = null,
+    string? DisplayName = null,
+    IReadOnlyDictionary<string, string>? Headers = null);

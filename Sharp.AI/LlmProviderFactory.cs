@@ -13,7 +13,8 @@ public static class LlmProviderFactory
                 context.Model,
                 context.BaseUrl,
                 context.Handler,
-                ResolveCredentialProvider(context))),
+                ResolveCredentialProvider(context),
+                context.Headers)),
             overwrite: true);
 
         Register(
@@ -22,7 +23,8 @@ public static class LlmProviderFactory
                 context.Model,
                 context.BaseUrl,
                 context.Handler,
-                ResolveCredentialProvider(context))),
+                ResolveCredentialProvider(context),
+                context.Headers)),
             overwrite: true);
 
         Register(
@@ -31,7 +33,8 @@ public static class LlmProviderFactory
                 context.Model,
                 context.BaseUrl,
                 context.Handler,
-                ResolveCredentialProvider(context))),
+                ResolveCredentialProvider(context),
+                context.Headers)),
             overwrite: true);
 
         Register(
@@ -41,7 +44,8 @@ public static class LlmProviderFactory
                     context.Model,
                     context.BaseUrl,
                     context.Handler,
-                    ResolveCredentialProvider(context)),
+                    ResolveCredentialProvider(context),
+                    context.Headers),
                 AntigravityCredentialEnvelope.ResolveProjectId(context.ApiKey)),
             overwrite: true);
     }
@@ -107,7 +111,7 @@ public static class LlmProviderFactory
         if (factory == null)
             throw new ArgumentOutOfRangeException(nameof(model.ApiKind), model.ApiKind, "Unknown provider API kind");
 
-        return factory(new LlmProviderCreateContext(model, apiKey, baseUrl, handler, credentialProvider));
+        return factory(new LlmProviderCreateContext(model, apiKey, baseUrl, handler, credentialProvider, model.Headers));
     }
 
     private static ILlmCredentialProvider ResolveCredentialProvider(LlmProviderCreateContext context)
@@ -133,12 +137,17 @@ public static class LlmProviderFactory
         ModelDescriptor model,
         string baseUrl,
         HttpMessageHandler? handler,
-        ILlmCredentialProvider credentialProvider)
+        ILlmCredentialProvider credentialProvider,
+        IReadOnlyDictionary<string, string>? headers = null)
     {
         if (!baseUrl.EndsWith('/'))
             baseUrl += "/";
 
-        var innerHandler = handler ?? new HttpClientHandler();
+        HttpMessageHandler innerHandler = handler ?? new HttpClientHandler();
+
+        if (headers is { Count: > 0 })
+            innerHandler = new StaticHeadersHandler(innerHandler, headers);
+
         var pipeline = new CredentialInjectionHandler(
             innerHandler,
             credentialProvider,

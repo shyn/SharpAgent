@@ -5,4 +5,5 @@ public sealed record LlmProviderCreateContext(
     string ApiKey,
     string BaseUrl,
     HttpMessageHandler? Handler = null,
-    ILlmCredentialProvider? CredentialProvider = null);
+    ILlmCredentialProvider? CredentialProvider = null,
+    IReadOnlyDictionary<string, string>? Headers = null);
