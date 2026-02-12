@@ -68,6 +68,9 @@ public sealed class AgentConfigurationService
             var config = JsonSerializer.Deserialize<AgentConfig>(json, JsonOptions);
             if (config != null)
             {
+                config.Providers = ProviderMerger.Merge(
+                    AgentConfig.GetBuiltInProviders(),
+                    config.Providers);
                 return new AgentConfigurationService(ApplyEnvironmentOverrides(config));
             }
         }
@@ -206,13 +209,12 @@ public sealed class AgentConfigurationService
         var resolvedAgentDirectory = agentDirectory ?? DefaultAgentDirectory();
 
         var (providerId, modelId) = ParseModelString(modelString);
-        var provider = Config.Providers.FirstOrDefault(p =>
-            p.Id.Equals(providerId, StringComparison.OrdinalIgnoreCase))
-            ?? throw new InvalidOperationException($"Provider '{providerId}' is not configured");
-
-        var model = provider.Models.FirstOrDefault(m =>
-            m.Id.Equals(modelId, StringComparison.OrdinalIgnoreCase))
-            ?? throw new InvalidOperationException($"Model '{modelId}' is not configured under provider '{providerId}'");
+        var provider = Config.Providers.FirstOrDefault(p => p.Id.Equals(providerId, StringComparison.OrdinalIgnoreCase));
+        if (provider is null)
+            throw new InvalidOperationException($"Provider '{providerId}' is not configured");
+        var model = provider.Models.FirstOrDefault(m => m.Id.Equals(modelId, StringComparison.OrdinalIgnoreCase));
+        if (model is null)
+            throw new InvalidOperationException($"Model '{modelId}' is not configured under provider '{providerId}'");
 
         // Prefer provider-level API format, keep legacy model-level override for compatibility.
         var apiFormat = model.Api ?? provider.Api;
@@ -233,6 +235,14 @@ public sealed class AgentConfigurationService
             ? new AntigravityBearerTokenSource(credentialCandidates, fallbackToken: apiKey)
             : new EnvironmentVariableBearerTokenSource(credentialCandidates, fallbackToken: apiKey);
 
+        var mergedHeaders = MergeHeaders(provider.Headers, model.Headers);
+        var resolvedHeaders = ConfigValueResolver.ResolveHeaders(mergedHeaders);
+
+        if (provider.AuthHeader == true && !string.IsNullOrWhiteSpace(apiKey))
+        {
+            resolvedHeaders = AddAuthorizationHeader(resolvedHeaders, apiKey);
+        }
+
         return new AgentRuntimeOptions
         {
             Model = new ModelDescriptor(
@@ -245,7 +255,9 @@ public sealed class AgentConfigurationService
                     ? OpenAiCompatResolver.ResolveCompletionsCompat(provider.Id, baseUrl, model.Compat)
                     : null,
                 Capabilities: modelCapabilities,
-                Pricing: modelPricing),
+                Pricing: modelPricing,
+                DisplayName: model.Name ?? model.Id,
+                Headers: resolvedHeaders),
             ApiKey = apiKey,
             CredentialProvider = new CachingBearerCredentialProvider(
                 providerApiKind,
@@ -272,11 +284,9 @@ public sealed class AgentConfigurationService
     }
 
     public IReadOnlyList<string> GetAvailableModels()
-    {
-        return Config.Providers
-            .SelectMany(provider => provider.Models.Select(model => $"{provider.Id}/{model.Id}"))
+        => Config.Providers
+            .SelectMany(p => p.Models.Select(m => $"{p.Id}/{m.Id}"))
             .ToList();
-    }
 
     public static (string ProviderId, string ModelId) ParseModelString(string modelString)
     {
@@ -350,15 +360,29 @@ public sealed class AgentConfigurationService
 
     private static string? ResolveProviderApiKey(ProviderConfig provider, string agentDirectory)
     {
+        // 1. Environment variables
         var fromEnvironment = ResolveProviderValue(string.Empty, GetProviderCredentialEnvironmentVariableCandidates(provider));
         if (!string.IsNullOrWhiteSpace(fromEnvironment))
             return fromEnvironment;
 
+        // 2-3. AuthStore (api_key resolved + oauth access token)
+        var authStorePath = DefaultAuthStorePath(agentDirectory);
+        var authStore = AuthStore.LoadFromFile(authStorePath);
+        var fromAuthStore = authStore.GetApiKey(provider.Id);
+        if (!string.IsNullOrWhiteSpace(fromAuthStore))
+            return fromAuthStore;
+
+        // Legacy OAuthCredentialStore fallback
         var fromOAuthStore = ResolveProviderApiKeyFromOAuthStore(provider, agentDirectory);
         if (!string.IsNullOrWhiteSpace(fromOAuthStore))
             return fromOAuthStore;
 
-        return provider.ApiKey ?? string.Empty;
+        // 4. Config provider.ApiKey (resolved via ConfigValueResolver)
+        var resolvedConfigKey = ConfigValueResolver.Resolve(provider.ApiKey);
+        if (!string.IsNullOrWhiteSpace(resolvedConfigKey))
+            return resolvedConfigKey;
+
+        return string.Empty;
     }
 
     private static string? ResolveProviderApiKeyFromEnvironmentOrConfig(ProviderConfig provider)
@@ -464,6 +488,78 @@ public sealed class AgentConfigurationService
             Add("GITHUB_TOKEN");
         }
 
+        if (provider.Id.Equals("google", StringComparison.OrdinalIgnoreCase) &&
+            suffix.Equals("API_KEY", StringComparison.Ordinal))
+        {
+            Add("GEMINI_API_KEY");
+        }
+
+        if (provider.Id.Equals("azure-openai-responses", StringComparison.OrdinalIgnoreCase) &&
+            suffix.Equals("API_KEY", StringComparison.Ordinal))
+        {
+            Add("AZURE_OPENAI_API_KEY");
+        }
+
+        if (provider.Id.Equals("xai", StringComparison.OrdinalIgnoreCase) &&
+            suffix.Equals("API_KEY", StringComparison.Ordinal))
+        {
+            Add("XAI_API_KEY");
+        }
+
+        if (provider.Id.Equals("groq", StringComparison.OrdinalIgnoreCase) &&
+            suffix.Equals("API_KEY", StringComparison.Ordinal))
+        {
+            Add("GROQ_API_KEY");
+        }
+
+        if (provider.Id.Equals("cerebras", StringComparison.OrdinalIgnoreCase) &&
+            suffix.Equals("API_KEY", StringComparison.Ordinal))
+        {
+            Add("CEREBRAS_API_KEY");
+        }
+
+        if (provider.Id.Equals("openrouter", StringComparison.OrdinalIgnoreCase) &&
+            suffix.Equals("API_KEY", StringComparison.Ordinal))
+        {
+            Add("OPENROUTER_API_KEY");
+        }
+
+        if (provider.Id.Equals("vercel-ai-gateway", StringComparison.OrdinalIgnoreCase) &&
+            suffix.Equals("API_KEY", StringComparison.Ordinal))
+        {
+            Add("AI_GATEWAY_API_KEY");
+        }
+
+        if (provider.Id.Equals("zai", StringComparison.OrdinalIgnoreCase) &&
+            suffix.Equals("API_KEY", StringComparison.Ordinal))
+        {
+            Add("ZAI_API_KEY");
+        }
+
+        if (provider.Id.Equals("mistral", StringComparison.OrdinalIgnoreCase) &&
+            suffix.Equals("API_KEY", StringComparison.Ordinal))
+        {
+            Add("MISTRAL_API_KEY");
+        }
+
+        if (provider.Id.Equals("minimax", StringComparison.OrdinalIgnoreCase) &&
+            suffix.Equals("API_KEY", StringComparison.Ordinal))
+        {
+            Add("MINIMAX_API_KEY");
+        }
+
+        if (provider.Id.Equals("minimax-cn", StringComparison.OrdinalIgnoreCase) &&
+            suffix.Equals("API_KEY", StringComparison.Ordinal))
+        {
+            Add("MINIMAX_CN_API_KEY");
+        }
+
+        if (provider.Id.Equals("opencode", StringComparison.OrdinalIgnoreCase) &&
+            suffix.Equals("API_KEY", StringComparison.Ordinal))
+        {
+            Add("OPENCODE_API_KEY");
+        }
+
         return candidates;
     }
 
@@ -494,18 +590,66 @@ public sealed class AgentConfigurationService
         return string.IsNullOrWhiteSpace(normalized) ? "PROVIDER" : normalized;
     }
 
+    private static IReadOnlyDictionary<string, string>? MergeHeaders(
+        Dictionary<string, string>? providerHeaders,
+        Dictionary<string, string>? modelHeaders)
+    {
+        if (providerHeaders is not { Count: > 0 } && modelHeaders is not { Count: > 0 })
+            return null;
+
+        var merged = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        if (providerHeaders is { Count: > 0 })
+        {
+            foreach (var (key, value) in providerHeaders)
+                merged[key] = value;
+        }
+
+        if (modelHeaders is { Count: > 0 })
+        {
+            foreach (var (key, value) in modelHeaders)
+                merged[key] = value;
+        }
+
+        return merged;
+    }
+
+    private static IReadOnlyDictionary<string, string> AddAuthorizationHeader(
+        IReadOnlyDictionary<string, string>? existing,
+        string apiKey)
+    {
+        var result = existing is not null
+            ? new Dictionary<string, string>(existing, StringComparer.Ordinal)
+            : new Dictionary<string, string>(StringComparer.Ordinal);
+
+        result.TryAdd("Authorization", $"Bearer {apiKey}");
+        return result;
+    }
+
     private static bool IsOAuthProvider(ProviderConfig provider)
         => provider.Id.Equals("google-antigravity", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsOAuthProvider(ProviderConfig provider, string agentDirectory)
+    {
+        if (provider.Id.Equals("google-antigravity", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var authStore = AuthStore.LoadFromFile(DefaultAuthStorePath(agentDirectory));
+        var cred = authStore.Get(provider.Id);
+        return cred is OAuthAuthCredential;
+    }
 
     private static string BuildCredentialGuidance(ProviderConfig provider, string agentDirectory)
     {
         var envCandidates = string.Join(", ", GetProviderCredentialEnvironmentVariableCandidates(provider));
-        if (IsOAuthProvider(provider))
+        var authPath = DefaultAuthStorePath(agentDirectory);
+
+        if (IsOAuthProvider(provider, agentDirectory))
         {
-            return $"Run OAuth login to populate '{DefaultAuthStorePath(agentDirectory)}', " +
+            return $"Run OAuth login, add api_key entry in '{authPath}', " +
                    $"configure providers[].apiKey, or set one of: {envCandidates}.";
         }
 
-        return $"Configure providers[].apiKey or set one of: {envCandidates}.";
+        return $"Add entry in '{authPath}', configure providers[].apiKey, or set one of: {envCandidates}.";
     }
 }

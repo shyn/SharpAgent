@@ -66,6 +66,9 @@ public sealed class ModelConfig
 {
     public string Id { get; set; } = string.Empty;
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Name { get; set; }
+
     // Legacy per-model API override (prefer ProviderConfig.Api).
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ModelApiFormat? Api { get; set; }
@@ -81,6 +84,9 @@ public sealed class ModelConfig
 
     public int? ContextWindow { get; set; }
     public int? MaxOutputTokens { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, string>? Headers { get; set; }
 }
 
 public sealed class OpenAiCompletionsCompatConfig
@@ -122,12 +128,23 @@ public sealed class ProviderConfig
     public string? ApiKey { get; set; }
     public string BaseUrl { get; set; } = string.Empty;
     public List<ModelConfig> Models { get; set; } = [];
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, string>? Headers { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? AuthHeader { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, ModelOverrideConfig>? ModelOverrides { get; set; }
 }
 
 public sealed class AgentConfig
 {
     public string DefaultModel { get; set; } = "openai/gpt-4o-mini";
-    public List<ProviderConfig> Providers { get; set; } =
+    public List<ProviderConfig> Providers { get; set; } = [..GetBuiltInProviders()];
+
+    internal static IReadOnlyList<ProviderConfig> GetBuiltInProviders() =>
     [
         new ProviderConfig
         {
@@ -136,18 +153,8 @@ public sealed class AgentConfig
             BaseUrl = "https://api.openai.com/v1/",
             Models =
             [
-                new ModelConfig
-                {
-                    Id = "gpt-4o-mini",
-                    ContextWindow = 128000,
-                    MaxOutputTokens = 16384
-                },
-                new ModelConfig
-                {
-                    Id = "gpt-4o",
-                    ContextWindow = 128000,
-                    MaxOutputTokens = 16384
-                }
+                new ModelConfig { Id = "gpt-4o-mini", ContextWindow = 128000, MaxOutputTokens = 16384 },
+                new ModelConfig { Id = "gpt-4o", ContextWindow = 128000, MaxOutputTokens = 16384 }
             ]
         },
         new ProviderConfig
@@ -157,12 +164,7 @@ public sealed class AgentConfig
             BaseUrl = "https://api.anthropic.com/v1/",
             Models =
             [
-                new ModelConfig
-                {
-                    Id = "claude-sonnet-4-20250514",
-                    ContextWindow = 200000,
-                    MaxOutputTokens = 8192
-                }
+                new ModelConfig { Id = "claude-sonnet-4-20250514", ContextWindow = 200000, MaxOutputTokens = 8192 }
             ]
         },
         ..BuiltInPiProviders.Create()

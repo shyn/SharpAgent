@@ -25,76 +25,26 @@
       ]
     },
     {
-      "id": "openai",
-      "api": "openai-completions",
-      "apiKey": null,
-      "baseUrl": "https://api.openai.com/v1/",
-      "models": [
-        {
-          "id": "gpt-4o-mini",
-          "contextWindow": 128000,
-          "maxOutputTokens": 16384,
-          "capabilities": {
-            "supportsReasoning": true,
-            "supportsImageInput": true,
-            "supportsToolCall": true
-          },
-          "pricing": {
-            "inputPerMillionTokens": 0.15,
-            "outputPerMillionTokens": 0.6,
-            "cacheReadPerMillionTokens": 0.075
-          },
-          "compat": {
-            "supportsStore": true,
-            "supportsDeveloperRole": true,
-            "supportsReasoningEffort": true,
-            "supportsUsageInStreaming": true,
-            "supportsStrictMode": true,
-            "maxTokensField": "max_tokens",
-            "thinkingFormat": "openai",
-            "openRouterRouting": {
-              "order": ["openai", "anthropic"]
-            },
-            "vercelGatewayRouting": {
-              "only": ["openai"]
-            }
-          }
-        },
-        {
-          "id": "gpt-4o",
-          "contextWindow": 128000,
-          "maxOutputTokens": 16384
-        }
-      ]
-    },
-    {
       "id": "anthropic",
-      "api": "anthropic-messages",
-      "apiKey": null,
-      "baseUrl": "https://api.anthropic.com/v1/",
-      "models": [
-        {
-          "id": "claude-sonnet-4-20250514",
-          "contextWindow": 200000,
-          "maxOutputTokens": 8192
+      "baseUrl": "https://my-proxy.example.com/v1/",
+      "modelOverrides": {
+        "claude-sonnet-4-20250514": {
+          "name": "Claude Sonnet (Proxy)",
+          "contextWindow": 200000
         }
-      ]
+      }
     },
     {
-      "id": "kimi-coding",
-      "api": "anthropic-messages",
-      "apiKey": null,
-      "baseUrl": "https://api.kimi.com/coding/v1/",
+      "id": "ollama",
+      "api": "openai-completions",
+      "apiKey": "ollama",
+      "baseUrl": "http://localhost:11434/v1/",
       "models": [
         {
-          "id": "k2p5",
-          "contextWindow": 262144,
-          "maxOutputTokens": 32768
-        },
-        {
-          "id": "kimi-k2-thinking",
-          "contextWindow": 262144,
-          "maxOutputTokens": 32768
+          "id": "llama3.1:8b",
+          "name": "Llama 3.1 8B",
+          "contextWindow": 128000,
+          "maxOutputTokens": 32000
         }
       ]
     }
