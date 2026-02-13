@@ -38,7 +38,7 @@ internal sealed class CliEventRenderer
             case AgentThinkingStartedEvent:
                 EndTextLine();
                 _thinkingBuffer.Clear();
-                _errorWriter.WriteLine("[thinking:start]");
+                _errorWriter.WriteLine(Ansi.Color("[thinking:start]", Ansi.Gray));
                 break;
             case AgentThinkingDeltaEvent thinkingDelta:
                 _thinkingBuffer.Append(thinkingDelta.Delta);
@@ -57,7 +57,7 @@ internal sealed class CliEventRenderer
                 EndTextLine();
                 _toolNamesByCallId[toolUseStarted.ToolCallId] = toolUseStarted.ToolName;
                 _toolArgumentsByCallId[toolUseStarted.ToolCallId] = new StringBuilder();
-                _errorWriter.WriteLine($"[tool:call:start] {toolUseStarted.ToolName} ({toolUseStarted.ToolCallId})");
+                _errorWriter.WriteLine(Ansi.Color($"[tool:call:start] {toolUseStarted.ToolName} ({toolUseStarted.ToolCallId})", Ansi.Cyan));
                 break;
             case AgentToolUseArgumentsDeltaEvent argsDelta:
                 AppendToolArguments(argsDelta);
@@ -68,7 +68,7 @@ internal sealed class CliEventRenderer
                 break;
             case AgentToolExecutionStartedEvent executionStarted:
                 EndTextLine();
-                _errorWriter.WriteLine($"[tool:exec:start] {executionStarted.ToolName} ({executionStarted.ToolCallId})");
+                _errorWriter.WriteLine(Ansi.Color($"[tool:exec:start] {executionStarted.ToolName} ({executionStarted.ToolCallId})", Ansi.Cyan));
                 WriteIndentedBlock("args", TryFormatJson(executionStarted.ArgumentsJson));
                 break;
             case AgentToolExecutionUpdatedEvent executionUpdated:
@@ -84,17 +84,17 @@ internal sealed class CliEventRenderer
             case AgentErrorEvent error:
                 EndTextLine();
                 _errorWriter.WriteLine(
-                    $"[error] {error.Message} (category={error.Category}, status={error.StatusCode?.ToString() ?? "n/a"}, retryable={error.Retryable})");
+                    Ansi.Color($"[error] {error.Message} (category={error.Category}, status={error.StatusCode?.ToString() ?? "n/a"}, retryable={error.Retryable})", Ansi.Red + Ansi.Bold));
                 break;
             case AgentTurnCompletedEvent turnCompleted:
                 EndTextLine();
-                _errorWriter.WriteLine($"[turn:end] tool_results={turnCompleted.ToolMessages.Count}");
+                _errorWriter.WriteLine(Ansi.Color($"[turn:end] tool_results={turnCompleted.ToolMessages.Count}", Ansi.Magenta));
                 break;
             case AgentCompletedEvent completed:
                 if (!_hasTextDeltaInCurrentPrompt)
                     RenderCompletedTextFallback(completed.AssistantMessage);
                 EndTextLine();
-                _errorWriter.WriteLine("[result:end]");
+                _errorWriter.WriteLine(Ansi.Color("[result:end]", Ansi.Green));
                 break;
         }
     }
@@ -116,11 +116,11 @@ internal sealed class CliEventRenderer
 
         if (string.Equals(preview, "(empty)", StringComparison.Ordinal))
         {
-            _errorWriter.WriteLine($"[turn:start] mode={mode}");
+            _errorWriter.WriteLine(Ansi.Color($"[turn:start] mode={mode}", Ansi.Magenta));
             return;
         }
 
-        _errorWriter.WriteLine($"[turn:start] mode={mode} prompt={preview}");
+        _errorWriter.WriteLine(Ansi.Color($"[turn:start] mode={mode} prompt={preview}", Ansi.Magenta));
     }
 
     private void RenderThinkingCompleted(AgentThinkingCompletedEvent completed)
@@ -129,7 +129,7 @@ internal sealed class CliEventRenderer
             _thinkingBuffer.Append(completed.FullThinking);
 
         var preview = BuildPreview(_thinkingBuffer.ToString(), 200);
-        _errorWriter.WriteLine($"[thinking:end] {preview}");
+        _errorWriter.WriteLine(Ansi.Color($"[thinking:end] {preview}", Ansi.Gray));
         _thinkingBuffer.Clear();
     }
 
@@ -150,7 +150,7 @@ internal sealed class CliEventRenderer
             ? knownName
             : "unknown";
 
-        _errorWriter.WriteLine($"[tool:call:ready] {toolName} ({completed.ToolCallId})");
+        _errorWriter.WriteLine(Ansi.Color($"[tool:call:ready] {toolName} ({completed.ToolCallId})", Ansi.Cyan));
 
         if (_toolArgumentsByCallId.TryGetValue(completed.ToolCallId, out var argsBuilder))
         {
@@ -164,13 +164,14 @@ internal sealed class CliEventRenderer
     private void RenderToolExecutionUpdate(AgentToolExecutionUpdatedEvent updated)
     {
         var preview = BuildPreview(updated.PartialResult.ContentAsText, 180);
-        _errorWriter.WriteLine($"[tool:exec:update] {updated.ToolName} ({updated.ToolCallId}) => {preview}");
+        _errorWriter.WriteLine(Ansi.Color($"[tool:exec:update] {updated.ToolName} ({updated.ToolCallId}) => {preview}", Ansi.Cyan));
     }
 
     private void RenderToolResult(AgentToolExecutionCompletedEvent completed)
     {
         var status = completed.Result.IsError ? "error" : "ok";
-        _errorWriter.WriteLine($"[tool:exec:{status}] {completed.ToolName} ({completed.ToolCallId})");
+        var color = completed.Result.IsError ? Ansi.Red : Ansi.Green;
+        _errorWriter.WriteLine(Ansi.Color($"[tool:exec:{status}] {completed.ToolName} ({completed.ToolCallId})", color));
         WriteIndentedBlock("result", BuildToolResultJson(completed.Result));
     }
 

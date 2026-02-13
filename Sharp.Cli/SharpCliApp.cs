@@ -24,7 +24,7 @@ internal static class SharpCliApp
         }
         catch (CliUsageException ex)
         {
-            Console.Error.WriteLine($"Argument error: {ex.Message}");
+            Console.Error.WriteLine(Ansi.Color($"Argument error: {ex.Message}", Ansi.Red));
             PrintHelp();
             return 2;
         }
@@ -48,17 +48,17 @@ internal static class SharpCliApp
         }
         catch (CliUsageException ex)
         {
-            Console.Error.WriteLine($"Argument error: {ex.Message}");
+            Console.Error.WriteLine(Ansi.Color($"Argument error: {ex.Message}", Ansi.Red));
             return 2;
         }
         catch (OperationCanceledException)
         {
-            Console.Error.WriteLine("Cancelled");
+            Console.Error.WriteLine(Ansi.Color("Cancelled", Ansi.Yellow));
             return 130;
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Fatal: {ex.Message}");
+            Console.Error.WriteLine(Ansi.Color($"Fatal: {ex.Message}", Ansi.Red));
             return 1;
         }
     }
@@ -121,7 +121,7 @@ internal static class SharpCliApp
         service.SaveToFile(path);
 
         var action = exists ? "Overwrote" : "Initialized";
-        Console.WriteLine($"{action} config at '{path}'.");
+        Console.WriteLine(Ansi.Color($"{action} config at '{path}'.", Ansi.Green));
         Console.WriteLine(
             "Set provider environment variables like SHARP_<PROVIDER_ID>_API_KEY (or <PROVIDER_ID>_API_KEY), " +
             "or update provider apiKey values before running.");
@@ -146,7 +146,7 @@ internal static class SharpCliApp
                 return 1;
             }
 
-            Console.Error.WriteLine($"Config file not found: '{path}'. Run 'sharp config init --config \"{path}\"' first.");
+            Console.Error.WriteLine(Ansi.Color($"Config file not found: '{path}'. Run 'sharp config init --config \"{path}\"' first.", Ansi.Red));
             return 1;
         }
 
@@ -169,7 +169,7 @@ internal static class SharpCliApp
                 return 1;
             }
 
-            Console.Error.WriteLine($"Failed to load config: {ex.Message}");
+            Console.Error.WriteLine(Ansi.Color($"Failed to load config: {ex.Message}", Ansi.Red));
             return 1;
         }
 
@@ -183,21 +183,21 @@ internal static class SharpCliApp
 
         if (validation.Warnings.Count > 0)
         {
-            Console.WriteLine("Config warnings:");
+            Console.WriteLine(Ansi.Color("Config warnings:", Ansi.Yellow));
             foreach (var warning in validation.Warnings)
                 Console.WriteLine($"  - {warning}");
         }
 
         if (!validation.IsValid)
         {
-            Console.Error.WriteLine("Config validation failed:");
+            Console.Error.WriteLine(Ansi.Color("Config validation failed:", Ansi.Red));
             foreach (var error in validation.Errors)
                 Console.Error.WriteLine($"  - {error}");
 
             return 1;
         }
 
-        Console.WriteLine($"Config is valid: '{path}'.");
+        Console.WriteLine(Ansi.Color($"Config is valid: '{path}'.", Ansi.Green));
         return 0;
     }
 
@@ -411,7 +411,7 @@ internal static class SharpCliApp
 
     private static int FailUnknownCommand(string command)
     {
-        Console.Error.WriteLine($"Unknown command '{command}'");
+        Console.Error.WriteLine(Ansi.Color($"Unknown command '{command}'", Ansi.Red));
         PrintHelp();
         return 2;
     }
