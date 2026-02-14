@@ -21,6 +21,7 @@
                             Content="✕"
                             Command="{Binding CancelCommand}"
                             IsVisible="{Binding IsProcessing}"
+                            ToolTip.Tip="Stop generation"
                             Margin="8,0,0,0"
                             Padding="10,8"
                             Background="#7f1d1d"
