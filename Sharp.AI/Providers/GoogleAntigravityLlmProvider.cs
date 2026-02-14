@@ -408,114 +408,114 @@ public sealed class GoogleAntigravityLlmProvider : ILlmProvider
             switch (message.Role)
             {
                 case LlmMessageRole.User:
-                {
-                    var parts = NewParts();
-                    foreach (var block in message.Content)
                     {
-                        switch (block)
+                        var parts = NewParts();
+                        foreach (var block in message.Content)
                         {
-                            case TextContentBlock text when !string.IsNullOrWhiteSpace(text.Text):
-                                parts.Add(new Dictionary<string, object?> { ["text"] = text.Text });
-                                break;
-                            case ImageContentBlock image:
-                                parts.Add(new Dictionary<string, object?>
-                                {
-                                    ["inlineData"] = new Dictionary<string, object?>
-                                    {
-                                        ["mimeType"] = image.MimeType,
-                                        ["data"] = image.Base64Data
-                                    }
-                                });
-                                break;
-                        }
-                    }
-
-                    if (parts.Count > 0)
-                    {
-                        contents.Add(new Dictionary<string, object?>
-                        {
-                            ["role"] = "user",
-                            ["parts"] = parts
-                        });
-                    }
-
-                    break;
-                }
-                case LlmMessageRole.Assistant:
-                {
-                    var parts = NewParts();
-                    foreach (var block in message.Content)
-                    {
-                        switch (block)
-                        {
-                            case TextContentBlock text when !string.IsNullOrWhiteSpace(text.Text):
-                                parts.Add(new Dictionary<string, object?> { ["text"] = text.Text });
-                                break;
-                            case ThinkingContentBlock thinking when !string.IsNullOrWhiteSpace(thinking.Text):
-                                // Keep replay stable across providers by degrading thinking to plain text.
-                                parts.Add(new Dictionary<string, object?> { ["text"] = thinking.Text });
-                                break;
-                            case ToolCallContentBlock toolCall:
+                            switch (block)
                             {
-                                var normalizedId = NormalizeToolCallId(toolCall.ToolCallId);
-                                parts.Add(new Dictionary<string, object?>
-                                {
-                                    ["functionCall"] = new Dictionary<string, object?>
+                                case TextContentBlock text when !string.IsNullOrWhiteSpace(text.Text):
+                                    parts.Add(new Dictionary<string, object?> { ["text"] = text.Text });
+                                    break;
+                                case ImageContentBlock image:
+                                    parts.Add(new Dictionary<string, object?>
                                     {
-                                        ["name"] = toolCall.ToolName,
-                                        ["args"] = ParseJsonObject(toolCall.ArgumentsJson),
-                                        ["id"] = normalizedId
-                                    }
-                                });
-                                break;
+                                        ["inlineData"] = new Dictionary<string, object?>
+                                        {
+                                            ["mimeType"] = image.MimeType,
+                                            ["data"] = image.Base64Data
+                                        }
+                                    });
+                                    break;
                             }
                         }
-                    }
 
-                    if (parts.Count > 0)
-                    {
-                        contents.Add(new Dictionary<string, object?>
-                        {
-                            ["role"] = "model",
-                            ["parts"] = parts
-                        });
-                    }
-
-                    break;
-                }
-                case LlmMessageRole.Tool:
-                {
-                    foreach (var toolResult in message.Content.OfType<ToolResultContentBlock>())
-                    {
-                        var normalizedId = NormalizeToolCallId(toolResult.ToolCallId);
-                        var functionResponsePart = new Dictionary<string, object?>
-                        {
-                            ["functionResponse"] = new Dictionary<string, object?>
-                            {
-                                ["name"] = toolResult.ToolName,
-                                ["response"] = toolResult.IsError
-                                    ? new Dictionary<string, object?> { ["error"] = toolResult.ContentText }
-                                    : new Dictionary<string, object?> { ["output"] = toolResult.ContentText },
-                                ["id"] = normalizedId
-                            }
-                        };
-
-                        if (TryGetLastFunctionResponseUserTurn(contents, out var lastParts))
-                        {
-                            lastParts.Add(functionResponsePart);
-                        }
-                        else
+                        if (parts.Count > 0)
                         {
                             contents.Add(new Dictionary<string, object?>
                             {
                                 ["role"] = "user",
-                                ["parts"] = new List<Dictionary<string, object?>> { functionResponsePart }
+                                ["parts"] = parts
                             });
                         }
-                    }
 
-                    break;
-                }
+                        break;
+                    }
+                case LlmMessageRole.Assistant:
+                    {
+                        var parts = NewParts();
+                        foreach (var block in message.Content)
+                        {
+                            switch (block)
+                            {
+                                case TextContentBlock text when !string.IsNullOrWhiteSpace(text.Text):
+                                    parts.Add(new Dictionary<string, object?> { ["text"] = text.Text });
+                                    break;
+                                case ThinkingContentBlock thinking when !string.IsNullOrWhiteSpace(thinking.Text):
+                                    // Keep replay stable across providers by degrading thinking to plain text.
+                                    parts.Add(new Dictionary<string, object?> { ["text"] = thinking.Text });
+                                    break;
+                                case ToolCallContentBlock toolCall:
+                                    {
+                                        var normalizedId = NormalizeToolCallId(toolCall.ToolCallId);
+                                        parts.Add(new Dictionary<string, object?>
+                                        {
+                                            ["functionCall"] = new Dictionary<string, object?>
+                                            {
+                                                ["name"] = toolCall.ToolName,
+                                                ["args"] = ParseJsonObject(toolCall.ArgumentsJson),
+                                                ["id"] = normalizedId
+                                            }
+                                        });
+                                        break;
+                                    }
+                            }
+                        }
+
+                        if (parts.Count > 0)
+                        {
+                            contents.Add(new Dictionary<string, object?>
+                            {
+                                ["role"] = "model",
+                                ["parts"] = parts
+                            });
+                        }
+
+                        break;
+                    }
+                case LlmMessageRole.Tool:
+                    {
+                        foreach (var toolResult in message.Content.OfType<ToolResultContentBlock>())
+                        {
+                            var normalizedId = NormalizeToolCallId(toolResult.ToolCallId);
+                            var functionResponsePart = new Dictionary<string, object?>
+                            {
+                                ["functionResponse"] = new Dictionary<string, object?>
+                                {
+                                    ["name"] = toolResult.ToolName,
+                                    ["response"] = toolResult.IsError
+                                        ? new Dictionary<string, object?> { ["error"] = toolResult.ContentText }
+                                        : new Dictionary<string, object?> { ["output"] = toolResult.ContentText },
+                                    ["id"] = normalizedId
+                                }
+                            };
+
+                            if (TryGetLastFunctionResponseUserTurn(contents, out var lastParts))
+                            {
+                                lastParts.Add(functionResponsePart);
+                            }
+                            else
+                            {
+                                contents.Add(new Dictionary<string, object?>
+                                {
+                                    ["role"] = "user",
+                                    ["parts"] = new List<Dictionary<string, object?>> { functionResponsePart }
+                                });
+                            }
+                        }
+
+                        break;
+                    }
             }
         }
 
