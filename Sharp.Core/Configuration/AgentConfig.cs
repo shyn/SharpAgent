@@ -142,7 +142,7 @@ public sealed class ProviderConfig
 public sealed class AgentConfig
 {
     public string DefaultModel { get; set; } = "openai/gpt-4o-mini";
-    public List<ProviderConfig> Providers { get; set; } = [..GetBuiltInProviders()];
+    public List<ProviderConfig> Providers { get; set; } = [.. GetBuiltInProviders()];
 
     internal static IReadOnlyList<ProviderConfig> GetBuiltInProviders() =>
     [

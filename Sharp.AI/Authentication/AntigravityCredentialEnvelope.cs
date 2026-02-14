@@ -123,29 +123,29 @@ internal static class AntigravityCredentialEnvelope
         switch (value.ValueKind)
         {
             case JsonValueKind.String:
-            {
-                var raw = value.GetString();
-                if (string.IsNullOrWhiteSpace(raw))
-                    return null;
+                {
+                    var raw = value.GetString();
+                    if (string.IsNullOrWhiteSpace(raw))
+                        return null;
 
-                if (DateTimeOffset.TryParse(
-                        raw,
-                        CultureInfo.InvariantCulture,
-                        DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-                        out var parsedDateTime))
-                    return parsedDateTime;
+                    if (DateTimeOffset.TryParse(
+                            raw,
+                            CultureInfo.InvariantCulture,
+                            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                            out var parsedDateTime))
+                        return parsedDateTime;
 
-                if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedNumeric))
-                    return null;
+                    if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedNumeric))
+                        return null;
 
-                return ParseEpoch(parsedNumeric);
-            }
+                    return ParseEpoch(parsedNumeric);
+                }
             case JsonValueKind.Number:
-            {
-                if (value.TryGetDouble(out var numeric) && double.IsFinite(numeric))
-                    return ParseEpoch(numeric);
-                return null;
-            }
+                {
+                    if (value.TryGetDouble(out var numeric) && double.IsFinite(numeric))
+                        return ParseEpoch(numeric);
+                    return null;
+                }
             default:
                 return null;
         }
