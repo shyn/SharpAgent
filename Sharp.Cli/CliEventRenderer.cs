@@ -42,6 +42,7 @@ internal sealed class CliEventRenderer
                 break;
             case AgentThinkingDeltaEvent thinkingDelta:
                 _thinkingBuffer.Append(thinkingDelta.Delta);
+                _errorWriter.Write(Ansi.Color(".", Ansi.Gray));
                 break;
             case AgentThinkingCompletedEvent thinkingCompleted:
                 EndTextLine();

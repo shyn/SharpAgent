@@ -82,6 +82,30 @@ public sealed class CliEventRendererTests
         Assert.Contains("[result:end]", stderrText, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Render_ThinkingDelta_PrintsDots()
+    {
+        var stdout = new StringWriter();
+        var stderr = new StringWriter();
+        var renderer = new CliEventRenderer(stdout, stderr);
+
+        renderer.Render(new AgentThinkingStartedEvent());
+        renderer.Render(new AgentThinkingDeltaEvent("part1"));
+        renderer.Render(new AgentThinkingDeltaEvent("part2"));
+        renderer.Render(new AgentThinkingCompletedEvent("part1part2"));
+
+        var stderrText = stderr.ToString();
+
+        // Verify that dots are printed for each delta
+        // We sent 2 deltas, so we expect 2 dots.
+        // Note: each dot is wrapped in ANSI codes, so they are not consecutive in the raw string.
+        var dotCount = stderrText.Count(c => c == '.');
+        Assert.True(dotCount >= 2, $"Expected at least 2 dots, found {dotCount}. Output: {stderrText}");
+
+        Assert.Contains("[thinking:start]", stderrText, StringComparison.Ordinal);
+        Assert.Contains("[thinking:end]", stderrText, StringComparison.Ordinal);
+    }
+
     private static int CountOccurrences(string text, string value)
     {
         var count = 0;
