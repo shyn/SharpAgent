@@ -103,7 +103,6 @@ public sealed class CachingBearerCredentialProviderTests
     [Theory]
     [InlineData(ProviderApiKind.OpenAiChatCompletions)]
     [InlineData(ProviderApiKind.OpenAiResponses)]
-    [InlineData(ProviderApiKind.GoogleGeminiCli)]
     public async Task GetHeadersAsync_OpenAiKinds_UseAuthorizationHeader(ProviderApiKind apiKind)
     {
         var source = new SequentialTokenSource(new LlmBearerToken("token", DateTimeOffset.UtcNow.AddMinutes(10)));

@@ -122,8 +122,7 @@ public sealed class AgentConfigurationServiceTests
             "huggingface",
             "opencode",
             "github-copilot",
-            "kimi-coding",
-            "google-antigravity"
+            "kimi-coding"
         };
 
         foreach (var providerId in expectedProviderIds)
@@ -141,14 +140,6 @@ public sealed class AgentConfigurationServiceTests
         Assert.Equal("https://api.kimi.com/coding/v1/", provider.BaseUrl);
         var kimiDefaultModel = Assert.Single(provider.Models);
         Assert.Equal("kimi-k2-thinking", kimiDefaultModel.Id);
-
-        var antigravity = Assert.Single(
-            config.Providers,
-            p => p.Id.Equals("google-antigravity", StringComparison.OrdinalIgnoreCase));
-        Assert.Equal(ModelApiFormat.GoogleGeminiCli, antigravity.Api);
-        Assert.Contains(
-            antigravity.Models,
-            m => m.Id.Equals("gemini-3-flash", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -310,12 +301,12 @@ public sealed class AgentConfigurationServiceTests
     {
         var config = new AgentConfig
         {
-            DefaultModel = "antigravity/gemini-3-flash",
+            DefaultModel = "custom/gemini-3-flash",
             Providers =
             [
                 new ProviderConfig
                 {
-                    Id = "antigravity",
+                    Id = "custom",
                     Api = ModelApiFormat.AnthropicMessages,
                     ApiKey = "dummy",
                     BaseUrl = "http://localhost:8045/v1/",
@@ -348,12 +339,12 @@ public sealed class AgentConfigurationServiceTests
     {
         var config = new AgentConfig
         {
-            DefaultModel = "antigravity/gemini-3-flash",
+            DefaultModel = "custom/gemini-3-flash",
             Providers =
             [
                 new ProviderConfig
                 {
-                    Id = "antigravity",
+                    Id = "custom",
                     Api = ModelApiFormat.AnthropicMessages,
                     ApiKey = "config-key",
                     BaseUrl = "http://localhost:8045/v1/",
@@ -496,137 +487,6 @@ public sealed class AgentConfigurationServiceTests
                 Assert.Equal("openai-access-token", options.ApiKey);
                 Assert.IsType<CachingBearerCredentialProvider>(options.CredentialProvider);
             });
-    }
-
-    [Fact]
-    public void BuildRuntimeOptions_CanonicalGoogleAntigravityProvider_UsesAntigravityAccessTokenAlias()
-    {
-        var config = new AgentConfig
-        {
-            DefaultModel = "google-antigravity/gemini-3-flash",
-            Providers =
-            [
-                new ProviderConfig
-                {
-                    Id = "google-antigravity",
-                    Api = ModelApiFormat.GoogleGeminiCli,
-                    ApiKey = null,
-                    BaseUrl = "https://daily-cloudcode-pa.sandbox.googleapis.com/",
-                    Models =
-                    [
-                        new ModelConfig
-                        {
-                            Id = "gemini-3-flash"
-                        }
-                    ]
-                }
-            ]
-        };
-
-        WithEnvironmentVariables(
-            new Dictionary<string, string?>
-            {
-                ["ANTIGRAVITY_ACCESS_TOKEN"] = """{"token":"antigravity-token","projectId":"proj-42"}"""
-            },
-            () =>
-            {
-                var service = new AgentConfigurationService(config);
-                var options = service.BuildRuntimeOptions();
-                Assert.Equal("""{"token":"antigravity-token","projectId":"proj-42"}""", options.ApiKey);
-                Assert.IsType<CachingBearerCredentialProvider>(options.CredentialProvider);
-                Assert.Equal(ProviderApiKind.GoogleGeminiCli, options.Model.ApiKind);
-            });
-    }
-
-    [Fact]
-    public void BuildRuntimeOptions_CanonicalGoogleAntigravityProvider_UsesAuthStoreCredential()
-    {
-        var tempDir = CreateTempDirectory();
-        try
-        {
-            var authStorePath = AgentConfigurationService.DefaultAuthStorePath(tempDir);
-            var authStore = new OAuthCredentialStore();
-            var credential = """{"access":"antigravity-token","refresh":"refresh-token","expires":1730000000000,"projectId":"proj-42"}""";
-            authStore.SetCredential("google-antigravity", credential);
-            authStore.SaveToFile(authStorePath);
-
-            var config = new AgentConfig
-            {
-                DefaultModel = "google-antigravity/gemini-3-flash",
-                Providers =
-                [
-                    new ProviderConfig
-                    {
-                        Id = "google-antigravity",
-                        Api = ModelApiFormat.GoogleGeminiCli,
-                        ApiKey = null,
-                        BaseUrl = "https://daily-cloudcode-pa.sandbox.googleapis.com/",
-                        Models =
-                        [
-                            new ModelConfig
-                            {
-                                Id = "gemini-3-flash"
-                            }
-                        ]
-                    }
-                ]
-            };
-
-            var service = new AgentConfigurationService(config);
-            var options = service.BuildRuntimeOptions(agentDirectory: tempDir);
-            Assert.Equal("antigravity-token", options.ApiKey);
-            Assert.IsType<CachingBearerCredentialProvider>(options.CredentialProvider);
-            Assert.Equal(ProviderApiKind.GoogleGeminiCli, options.Model.ApiKind);
-        }
-        finally
-        {
-            TryDeleteDirectory(tempDir);
-        }
-    }
-
-    [Fact]
-    public void ValidateConfig_CanonicalGoogleAntigravityProvider_WithAuthStoreCredential_IsValid()
-    {
-        var tempDir = CreateTempDirectory();
-        try
-        {
-            var authStorePath = AgentConfigurationService.DefaultAuthStorePath(tempDir);
-            var authStore = new OAuthCredentialStore();
-            authStore.SetCredential(
-                "google-antigravity",
-                """{"access":"antigravity-token","refresh":"refresh-token","expires":1730000000000,"projectId":"proj-42"}""");
-            authStore.SaveToFile(authStorePath);
-
-            var config = new AgentConfig
-            {
-                DefaultModel = "google-antigravity/gemini-3-flash",
-                Providers =
-                [
-                    new ProviderConfig
-                    {
-                        Id = "google-antigravity",
-                        Api = ModelApiFormat.GoogleGeminiCli,
-                        ApiKey = null,
-                        BaseUrl = "https://daily-cloudcode-pa.sandbox.googleapis.com/",
-                        Models =
-                        [
-                            new ModelConfig
-                            {
-                                Id = "gemini-3-flash"
-                            }
-                        ]
-                    }
-                ]
-            };
-
-            var service = new AgentConfigurationService(config);
-            var validation = service.ValidateConfig(agentDirectory: tempDir);
-            Assert.True(validation.IsValid);
-        }
-        finally
-        {
-            TryDeleteDirectory(tempDir);
-        }
     }
 
     [Fact]
@@ -788,41 +648,6 @@ public sealed class AgentConfigurationServiceTests
             var service = AgentConfigurationService.LoadFromFile(path);
             var options = service.BuildRuntimeOptions();
             Assert.Equal(ProviderApiKind.OpenAiResponses, options.Model.ApiKind);
-        }
-        finally
-        {
-            if (File.Exists(path))
-                File.Delete(path);
-        }
-    }
-
-    [Fact]
-    public void LoadFromFile_ParsesGoogleAntigravityApiFormat()
-    {
-        var path = Path.Combine(Path.GetTempPath(), $"sharp-config-{Guid.NewGuid():N}.json");
-        try
-        {
-            File.WriteAllText(path,
-                """
-                {
-                  "defaultModel": "google-antigravity/gemini-3-flash",
-                  "providers": [
-                    {
-                      "id": "google-antigravity",
-                      "api": "google-gemini-cli",
-                      "apiKey": "{\"token\":\"test-token\",\"projectId\":\"proj-1\"}",
-                      "baseUrl": "https://daily-cloudcode-pa.sandbox.googleapis.com/",
-                      "models": [
-                        { "id": "gemini-3-flash" }
-                      ]
-                    }
-                  ]
-                }
-                """);
-
-            var service = AgentConfigurationService.LoadFromFile(path);
-            var options = service.BuildRuntimeOptions();
-            Assert.Equal(ProviderApiKind.GoogleGeminiCli, options.Model.ApiKind);
         }
         finally
         {

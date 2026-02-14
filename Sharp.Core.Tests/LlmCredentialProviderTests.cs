@@ -85,100 +85,6 @@ public sealed class LlmCredentialProviderTests
         Assert.Equal("2023-06-01", handler.AnthropicVersionValues[0]);
     }
 
-    [Fact]
-    public async Task Factory_GoogleAntigravity_UsesEnvelopeTokenAndProjectId()
-    {
-        var sse = string.Join(
-            "\n",
-            [
-                "data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":10,\"candidatesTokenCount\":2,\"cachedContentTokenCount\":1}}}"
-            ]);
-
-        var handler = new CaptureHeadersHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
-        {
-            Content = new StringContent(sse, Encoding.UTF8, "text/event-stream")
-        });
-
-        using var provider = LlmProviderFactory.Create(
-            model: new ModelDescriptor("google-antigravity", "gemini-3-flash", ProviderApiKind.GoogleGeminiCli),
-            apiKey: """{"token":"oauth-token","projectId":"proj-123"}""",
-            baseUrl: "https://daily-cloudcode-pa.sandbox.googleapis.com/",
-            handler: handler);
-
-        var request = new LlmRequest(
-            Model: new ModelDescriptor("google-antigravity", "gemini-3-flash", ProviderApiKind.GoogleGeminiCli),
-            SystemPrompt: "system",
-            Messages: [LlmMessage.UserText("hello")],
-            Tools: []);
-
-        var events = await CollectAsync(provider.StreamAsync(request));
-        var completed = Assert.IsType<LlmCompletedEvent>(events.Last());
-        Assert.Equal("ok", completed.FullText);
-
-        Assert.Single(handler.AuthorizationValues);
-        Assert.Equal("Bearer oauth-token", handler.AuthorizationValues[0]);
-        Assert.NotNull(handler.LastRequestBody);
-        Assert.Contains("\"project\":\"proj-123\"", handler.LastRequestBody!);
-    }
-
-    [Fact]
-    public async Task Factory_GoogleAntigravity_OAuthRefresh_EndToEnd_UsesRefreshedToken()
-    {
-        var refreshHandler = new CaptureRefreshHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
-        {
-            Content = new StringContent(
-                """{"access_token":"refreshed-token","expires_in":3600}""",
-                Encoding.UTF8,
-                "application/json")
-        });
-
-        var expired = DateTimeOffset.UtcNow.AddMinutes(-10).ToUnixTimeMilliseconds();
-        var oauthEnvelope =
-            $"{{\"access\":\"stale-token\",\"refresh\":\"refresh-token\",\"expires\":{expired},\"projectId\":\"proj-456\"}}";
-        using var credentialProvider = new CachingBearerCredentialProvider(
-            ProviderApiKind.GoogleGeminiCli,
-            new AntigravityBearerTokenSource(
-                oauthEnvelope,
-                refreshHandler),
-            cacheTokensWithoutExpiry: false);
-
-        var sse = string.Join(
-            "\n",
-            [
-                "data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":10,\"candidatesTokenCount\":2,\"cachedContentTokenCount\":1}}}"
-            ]);
-
-        var streamHandler = new CaptureHeadersHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
-        {
-            Content = new StringContent(sse, Encoding.UTF8, "text/event-stream")
-        });
-
-        using var provider = LlmProviderFactory.Create(
-            model: new ModelDescriptor("google-antigravity", "claude-opus-4-6-thinking", ProviderApiKind.GoogleGeminiCli),
-            apiKey: oauthEnvelope,
-            baseUrl: "https://daily-cloudcode-pa.sandbox.googleapis.com/",
-            credentialProvider: credentialProvider,
-            handler: streamHandler);
-
-        var request = new LlmRequest(
-            Model: new ModelDescriptor("google-antigravity", "claude-opus-4-6-thinking", ProviderApiKind.GoogleGeminiCli),
-            SystemPrompt: "system",
-            Messages: [LlmMessage.UserText("hello")],
-            Tools: []);
-
-        var events = await CollectAsync(provider.StreamAsync(request));
-        var completed = Assert.IsType<LlmCompletedEvent>(events.Last());
-
-        Assert.Equal("ok", completed.FullText);
-        Assert.Equal(1, refreshHandler.RequestCount);
-        Assert.Contains("oauth2.googleapis.com/token", refreshHandler.LastRequestUrl);
-        Assert.Contains("refresh_token=refresh-token", refreshHandler.LastRequestBody);
-        Assert.Single(streamHandler.AuthorizationValues);
-        Assert.Equal("Bearer refreshed-token", streamHandler.AuthorizationValues[0]);
-        Assert.NotNull(streamHandler.LastRequestBody);
-        Assert.Contains("\"project\":\"proj-456\"", streamHandler.LastRequestBody!);
-    }
-
     private static async Task<List<LlmStreamEvent>> CollectAsync(IAsyncEnumerable<LlmStreamEvent> stream)
     {
         var events = new List<LlmStreamEvent>();
@@ -241,30 +147,6 @@ public sealed class LlmCredentialProviderTests
                 ["Authorization"] = $"Bearer {next}"
             };
             return ValueTask.FromResult(headers);
-        }
-    }
-
-    private sealed class CaptureRefreshHandler : HttpMessageHandler
-    {
-        private readonly Func<HttpRequestMessage, HttpResponseMessage> _responseFactory;
-
-        public CaptureRefreshHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
-        {
-            _responseFactory = responseFactory;
-        }
-
-        public int RequestCount { get; private set; }
-        public string LastRequestUrl { get; private set; } = string.Empty;
-        public string LastRequestBody { get; private set; } = string.Empty;
-
-        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            RequestCount++;
-            LastRequestUrl = request.RequestUri?.ToString() ?? string.Empty;
-            LastRequestBody = request.Content == null
-                ? string.Empty
-                : await request.Content.ReadAsStringAsync(cancellationToken);
-            return _responseFactory(request);
         }
     }
 }

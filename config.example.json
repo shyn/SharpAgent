@@ -1,29 +1,6 @@
 {
-  "defaultModel": "google-antigravity/gemini-3-flash",
+  "defaultModel": "kimi-for-coding/k2p5",
   "providers": [
-    {
-      "id": "google-antigravity",
-      "api": "google-gemini-cli",
-      "apiKey": "{\"access\":\"<oauth-access-token>\",\"refresh\":\"<oauth-refresh-token>\",\"expires\":<oauth-expiry-unix-ms>,\"projectId\":\"<google-project-id>\"}",
-      "baseUrl": "https://daily-cloudcode-pa.sandbox.googleapis.com/",
-      "models": [
-        {
-          "id": "gemini-3-flash",
-          "contextWindow": 1048576,
-          "maxOutputTokens": 65535
-        },
-        {
-          "id": "claude-opus-4-6-thinking",
-          "contextWindow": 200000,
-          "maxOutputTokens": 128000
-        },
-        {
-          "id": "claude-sonnet-4-5-thinking",
-          "contextWindow": 200000,
-          "maxOutputTokens": 64000
-        }
-      ]
-    },
     {
       "id": "anthropic",
       "baseUrl": "https://my-proxy.example.com/v1/",

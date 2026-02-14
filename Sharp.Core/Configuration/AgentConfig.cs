@@ -31,8 +31,6 @@ public sealed class ModelApiFormatJsonConverter : JsonConverter<ModelApiFormat>
             "openai-responses" => ModelApiFormat.OpenAiResponses,
             "anthropic-messages" => ModelApiFormat.AnthropicMessages,
             "google-gemini-cli" => ModelApiFormat.GoogleGeminiCli,
-            // Backward compatibility for an early Sharp experimental value.
-            "google-antigravity" => ModelApiFormat.GoogleGeminiCli,
 
             // Backward compatibility for old enum-style config values.
             "OpenAiCompletions" => ModelApiFormat.OpenAiCompletions,
@@ -40,7 +38,6 @@ public sealed class ModelApiFormatJsonConverter : JsonConverter<ModelApiFormat>
             "OpenAiResponses" => ModelApiFormat.OpenAiResponses,
             "AnthropicMessages" => ModelApiFormat.AnthropicMessages,
             "GoogleGeminiCli" => ModelApiFormat.GoogleGeminiCli,
-            "GoogleAntigravity" => ModelApiFormat.GoogleGeminiCli,
             _ => throw new JsonException(
                 $"Unsupported model api format '{value}'. Expected one of: " +
                 "'openai-completions', 'openai-responses', 'anthropic-messages', 'google-gemini-cli'.")

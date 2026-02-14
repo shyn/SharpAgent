@@ -36,18 +36,6 @@ public static class LlmProviderFactory
                 ResolveCredentialProvider(context),
                 context.Headers)),
             overwrite: true);
-
-        Register(
-            ProviderApiKind.GoogleGeminiCli,
-            context => CreateGoogleAntigravity(
-                CreateHttpClient(
-                    context.Model,
-                    context.BaseUrl,
-                    context.Handler,
-                    ResolveCredentialProvider(context),
-                    context.Headers),
-                AntigravityCredentialEnvelope.ResolveProjectId(context.ApiKey)),
-            overwrite: true);
     }
 
     public static void Register(
@@ -122,14 +110,6 @@ public static class LlmProviderFactory
         if (string.IsNullOrWhiteSpace(context.ApiKey))
             throw new InvalidOperationException($"Missing API key for provider '{context.Model.ProviderId}'");
 
-        if (context.Model.ApiKind == ProviderApiKind.GoogleGeminiCli
-            && context.Model.ProviderId.Equals("google-antigravity", StringComparison.OrdinalIgnoreCase))
-        {
-            return new CachingBearerCredentialProvider(
-                context.Model.ApiKind,
-                new AntigravityBearerTokenSource(context.ApiKey));
-        }
-
         return new StaticApiKeyCredentialProvider(context.ApiKey);
     }
 
@@ -166,7 +146,4 @@ public static class LlmProviderFactory
 
     private static ILlmProvider CreateAnthropic(HttpClient httpClient)
         => new Providers.AnthropicLlmProvider(httpClient);
-
-    private static ILlmProvider CreateGoogleAntigravity(HttpClient httpClient, string projectId)
-        => new Providers.GoogleAntigravityLlmProvider(httpClient, projectId);
 }

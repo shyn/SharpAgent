@@ -15,7 +15,6 @@ public partial class SettingsViewModel : ViewModelBase
     };
 
     private readonly Action<string> _onApply;
-    private readonly AntigravityOAuthLoginService _antigravityOAuthLoginService = new();
 
     public ObservableCollection<SettingsMenuItemViewModel> MenuItems { get; } =
     [
@@ -123,41 +122,8 @@ public partial class SettingsViewModel : ViewModelBase
         if (SelectedProvider == null)
             return;
 
-        if (!SelectedProvider.Id.Equals("google-antigravity", StringComparison.OrdinalIgnoreCase))
-        {
-            StatusMessage = $"OAuth login is not supported for provider '{SelectedProvider.Id}' in this UI.";
-            IsError = true;
-            return;
-        }
-
-        try
-        {
-            IsLoggingIn = true;
-            IsError = false;
-            StatusMessage = "Starting OAuth login flow...";
-
-            var progress = new Progress<string>(message =>
-            {
-                StatusMessage = $"[oauth] {message}";
-                IsError = false;
-            });
-
-            var credential = await _antigravityOAuthLoginService.LoginAsync(progress);
-            SaveProviderOAuthCredential(SelectedProvider, credential);
-
-            ReloadProviders(preserveSelection: true);
-            StatusMessage = $"OAuth login succeeded for '{SelectedProvider.Id}'. Credential saved to config.";
-            IsError = false;
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"OAuth login failed: {ex.Message}";
-            IsError = true;
-        }
-        finally
-        {
-            IsLoggingIn = false;
-        }
+        StatusMessage = $"OAuth login is not supported for provider '{SelectedProvider.Id}' in this UI.";
+        IsError = true;
     }
 
     partial void OnConfigFilePathChanged(string value)
@@ -223,10 +189,9 @@ public partial class SettingsViewModel : ViewModelBase
         OAuthCredentialStore authStore,
         string authStorePath)
     {
-        var isOAuthProvider = provider.Id.Equals("google-antigravity", StringComparison.OrdinalIgnoreCase);
         var credentialEnvVar = ResolveCredentialEnvironmentVariable(provider.Id);
         var hasEnvCredential = !string.IsNullOrWhiteSpace(credentialEnvVar);
-        var hasAuthStoreCredential = isOAuthProvider && authStore.TryGetCredential(provider.Id, out _);
+        var hasAuthStoreCredential = authStore.TryGetCredential(provider.Id, out _);
         var hasConfigCredential = !string.IsNullOrWhiteSpace(provider.ApiKey);
         var hasCredential = hasEnvCredential || hasAuthStoreCredential || hasConfigCredential;
 
@@ -235,9 +200,7 @@ public partial class SettingsViewModel : ViewModelBase
             : hasAuthStoreCredential
                 ? $"Configured in auth store '{authStorePath}'."
             : hasConfigCredential
-                ? isOAuthProvider
-                    ? "Configured in config file (legacy). Prefer OAuth auth store."
-                    : "Configured in config file."
+                ? "Configured in config file."
                 : "No credential configured.";
 
         var sourceLabel = source switch
@@ -251,21 +214,9 @@ public partial class SettingsViewModel : ViewModelBase
         return new ProviderEntryViewModel(
             provider,
             sourceLabel,
-            isOAuthProvider,
+            false,
             hasCredential,
             credentialStatus);
-    }
-
-    private void SaveProviderOAuthCredential(
-        ProviderEntryViewModel providerEntry,
-        AntigravityOAuthCredential credential)
-    {
-        var authStorePath = AgentConfigurationService.DefaultAuthStorePath();
-        var authStore = OAuthCredentialStore.LoadFromFile(authStorePath);
-        authStore.SetCredential(
-            providerEntry.Id,
-            AntigravityOAuthLoginService.ToCredentialEnvelope(credential));
-        authStore.SaveToFile(authStorePath);
     }
 
     private AgentConfig LoadRawConfig(out string? errorMessage)
@@ -342,13 +293,6 @@ public partial class SettingsViewModel : ViewModelBase
             Add("KIMI_API_KEY");
             Add("KIMI_ACCESS_TOKEN");
             Add("KIMI_OAUTH_TOKEN");
-        }
-
-        if (providerId.Equals("google-antigravity", StringComparison.OrdinalIgnoreCase))
-        {
-            Add("ANTIGRAVITY_ACCESS_TOKEN");
-            Add("ANTIGRAVITY_OAUTH_TOKEN");
-            Add("ANTIGRAVITY_API_KEY");
         }
 
         if (providerId.Equals("huggingface", StringComparison.OrdinalIgnoreCase))

@@ -106,64 +106,6 @@ public sealed class LlmProviderMappingTests
     }
 
     [Fact]
-    public async Task GoogleAntigravityProvider_MapsRequestAndParsesThinkingTools()
-    {
-        var sse = string.Join(
-            "\n",
-            [
-                "data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"plan\",\"thought\":true,\"thoughtSignature\":\"c2ln\"},{\"text\":\"answer\"},{\"functionCall\":{\"id\":\"call@1\",\"name\":\"read\",\"args\":{\"path\":\"README.md\"}}}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":20,\"cachedContentTokenCount\":5,\"candidatesTokenCount\":6,\"thoughtsTokenCount\":2}}}"
-            ]);
-
-        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
-        {
-            Content = new StringContent(sse, Encoding.UTF8, "text/event-stream")
-        });
-
-        using var httpClient = new HttpClient(handler)
-        {
-            BaseAddress = new Uri("https://daily-cloudcode-pa.sandbox.googleapis.com/")
-        };
-
-        using var provider = new GoogleAntigravityLlmProvider(httpClient, "proj-42");
-        var request = new LlmRequest(
-            Model: new ModelDescriptor("google-antigravity", "gemini-3-flash", ProviderApiKind.GoogleGeminiCli),
-            SystemPrompt: "system",
-            Messages: [LlmMessage.UserText("hello")],
-            Tools:
-            [
-                ToolDefinition.FromObject("read", "Read file", new
-                {
-                    type = "object",
-                    properties = new { path = new { type = "string" } },
-                    required = new[] { "path" }
-                })
-            ]);
-
-        var events = await CollectAsync(provider.StreamAsync(request));
-        Assert.Contains(events, e => e is LlmThinkingStartedEvent);
-        Assert.Contains(events, e => e is LlmThinkingDeltaEvent delta && delta.Delta == "plan");
-        Assert.Contains(events, e => e is LlmTextDeltaEvent delta && delta.Delta == "answer");
-        Assert.Contains(events, e => e is LlmToolUseStartedEvent start && start.ToolName == "read");
-
-        var completed = Assert.IsType<LlmCompletedEvent>(events.Last());
-        Assert.Equal("answer", completed.FullText);
-        Assert.Equal("plan", completed.FullThinking);
-        Assert.Single(completed.ToolCalls);
-        Assert.Equal("{\"path\":\"README.md\"}", completed.ToolCalls[0].ArgumentsJson);
-        Assert.Equal(LlmStopReason.ToolUse, completed.StopReason);
-        Assert.Equal(15, completed.Usage!.InputTokens);
-        Assert.Equal(8, completed.Usage.OutputTokens);
-        Assert.Equal(5, completed.Usage.CacheReadTokens);
-
-        Assert.NotNull(handler.LastRequestBody);
-        Assert.Contains("\"requestType\":\"agent\"", handler.LastRequestBody);
-        Assert.Contains("\"userAgent\":\"antigravity\"", handler.LastRequestBody);
-        Assert.Contains("\"project\":\"proj-42\"", handler.LastRequestBody);
-        Assert.Contains("\"role\":\"user\"", handler.LastRequestBody);
-        Assert.Contains("\"functionDeclarations\"", handler.LastRequestBody);
-    }
-
-    [Fact]
     public async Task OpenAiProvider_OrphanToolCall_IsBackfilledWithSyntheticToolResult()
     {
         var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)

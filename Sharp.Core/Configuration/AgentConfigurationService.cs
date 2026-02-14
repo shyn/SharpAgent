@@ -231,9 +231,7 @@ public sealed class AgentConfigurationService
         var modelCapabilities = AgentConfig.ToModelCapabilities(apiFormat, model.Capabilities);
         var modelPricing = AgentConfig.ToModelPricing(model.Pricing);
         var credentialCandidates = GetProviderCredentialEnvironmentVariableCandidates(provider);
-        ILlmBearerTokenSource tokenSource = provider.Id.Equals("google-antigravity", StringComparison.OrdinalIgnoreCase)
-            ? new AntigravityBearerTokenSource(credentialCandidates, fallbackToken: apiKey)
-            : new EnvironmentVariableBearerTokenSource(credentialCandidates, fallbackToken: apiKey);
+        ILlmBearerTokenSource tokenSource = new EnvironmentVariableBearerTokenSource(credentialCandidates, fallbackToken: apiKey);
 
         var mergedHeaders = MergeHeaders(provider.Headers, model.Headers);
         var resolvedHeaders = ConfigValueResolver.ResolveHeaders(mergedHeaders);
@@ -390,7 +388,7 @@ public sealed class AgentConfigurationService
 
     private static string? ResolveProviderApiKeyFromOAuthStore(ProviderConfig provider, string agentDirectory)
     {
-        if (!IsOAuthProvider(provider))
+        if (!IsOAuthProvider(provider, agentDirectory))
             return null;
 
         var authStorePath = DefaultAuthStorePath(agentDirectory);
@@ -467,11 +465,6 @@ public sealed class AgentConfigurationService
         if (provider.Id.Equals("kimi-coding", StringComparison.OrdinalIgnoreCase))
         {
             Add($"KIMI_{suffix}");
-        }
-
-        if (provider.Id.Equals("google-antigravity", StringComparison.OrdinalIgnoreCase))
-        {
-            Add($"ANTIGRAVITY_{suffix}");
         }
 
         if (provider.Id.Equals("huggingface", StringComparison.OrdinalIgnoreCase) &&
@@ -626,14 +619,8 @@ public sealed class AgentConfigurationService
         return result;
     }
 
-    private static bool IsOAuthProvider(ProviderConfig provider)
-        => provider.Id.Equals("google-antigravity", StringComparison.OrdinalIgnoreCase);
-
     private static bool IsOAuthProvider(ProviderConfig provider, string agentDirectory)
     {
-        if (provider.Id.Equals("google-antigravity", StringComparison.OrdinalIgnoreCase))
-            return true;
-
         var authStore = AuthStore.LoadFromFile(DefaultAuthStorePath(agentDirectory));
         var cred = authStore.Get(provider.Id);
         return cred is OAuthAuthCredential;
