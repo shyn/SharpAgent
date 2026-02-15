@@ -1,12 +1,16 @@
+using System.Collections.Specialized;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Sharp.Gui.ViewModels;
 
 namespace Sharp.Gui.Views;
 
 public partial class ChatView : UserControl
 {
+    private ChatViewModel? _currentVm;
+
     public ChatView()
     {
         InitializeComponent();
@@ -22,8 +26,17 @@ public partial class ChatView : UserControl
 
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
+        // Unsubscribe from previous VM
+        if (_currentVm != null)
+        {
+            _currentVm.Messages.CollectionChanged -= OnMessagesChanged;
+        }
+
         if (DataContext is ChatViewModel vm)
         {
+            _currentVm = vm;
+            _currentVm.Messages.CollectionChanged += OnMessagesChanged;
+
             if (vm.BrowseWorkspaceInteraction is FolderBrowserInteraction interaction)
             {
                 interaction.RegisterHandler(async initialPath =>
@@ -42,6 +55,22 @@ public partial class ChatView : UserControl
                     return result.Count > 0 ? result[0].Path.LocalPath : null;
                 });
             }
+        }
+        else
+        {
+            _currentVm = null;
+        }
+    }
+
+    private void OnMessagesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.Action == NotifyCollectionChangedAction.Add || e.Action == NotifyCollectionChangedAction.Reset)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                var scrollViewer = this.FindControl<ScrollViewer>("MessageScrollViewer");
+                scrollViewer?.ScrollToEnd();
+            });
         }
     }
 

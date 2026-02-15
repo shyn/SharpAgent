@@ -20,6 +20,7 @@
                     <Button DockPanel.Dock="Right"
                             Content="✕"
                             Command="{Binding CancelCommand}"
+                            ToolTip.Tip="Stop generation"
                             IsVisible="{Binding IsProcessing}"
                             Margin="8,0,0,0"
                             Padding="10,8"
@@ -114,6 +115,7 @@
                                     <!-- Tool Header (Click to expand/collapse) -->
                                     <Button DockPanel.Dock="Top"
                                             Command="{Binding ToggleCollapseCommand}"
+                                            ToolTip.Tip="Toggle tool details"
                                             Background="#111827"
                                             Padding="12,10"
                                             CornerRadius="8,8,0,0"
