@@ -31,9 +31,8 @@ public static class TokenEstimator
         if (string.IsNullOrEmpty(text))
             return 0;
 
-        // Simple estimation based on character count
-        // This is less accurate than tiktoken but much faster and has no dependencies
-        return (int)Math.Ceiling(text.Length / CharactersPerToken);
+        // Optimized integer arithmetic: ceil(Length / 4.0) = (Length + 3) / 4
+        return (text.Length + 3) / 4;
     }
 
     /// <summary>
@@ -47,9 +46,10 @@ public static class TokenEstimator
             return 0;
 
         var contentTokens = 0;
-
-        foreach (var block in message.Content)
+        var count = message.Content.Count;
+        for (var i = 0; i < count; i++)
         {
+            var block = message.Content[i];
             contentTokens += block switch
             {
                 TextContentBlock text => EstimateTokens(text.Text),
@@ -79,9 +79,10 @@ public static class TokenEstimator
             total += MessageOverheadTokens + EstimateTokens(systemPrompt);
         }
 
-        foreach (var message in conversation)
+        var count = conversation.Count;
+        for (var i = 0; i < count; i++)
         {
-            total += EstimateMessageTokens(message);
+            total += EstimateMessageTokens(conversation[i]);
         }
 
         return total;
