@@ -5,7 +5,7 @@ SharpAgent is a **library-first coding agent framework** in C#/.NET 10, with a t
 This repository intentionally removed application entrypoints (Console/API/WinForms) and focuses on:
 
 - `Sharp.AI`: provider abstraction, message blocks, streaming events, OpenAI/Anthropic adapters.
-- `Sharp.Core`: session-driven agent runtime, JSONL tree session store, and coding tools (`read/write/edit/bash/grep/find/ls`).
+- `Sharp.Core`: session-driven agent runtime, JSONL tree session store, and coding tools (`read`, `write`, `edit`, `bash`).
 - `Sharp.Cli`: lightweight host over `Sharp.Core` (`run`/`repl`/`models`) for manual validation.
 - `Sharp.Core.Tests`: unit and integration tests.
 
@@ -13,11 +13,13 @@ This repository intentionally removed application entrypoints (Console/API/WinFo
 
 ```text
 SharpAgent/
-├── Sharp.AI/
-├── Sharp.Cli/
-├── Sharp.Core/
-├── Sharp.Core.Tests/
+├── Sharp.AI/              # Provider abstraction, streaming adapters
+├── Sharp.Cli/             # Thin CLI host for end-to-end validation
+├── Sharp.Cli.Tests/       # CLI tests
+├── Sharp.Core/            # Agent runtime, session management, tools
+├── Sharp.Core.Tests/      # Unit and integration tests
 ├── docs/
+├── config.example.json
 └── SharpAgent.sln
 ```
 
@@ -25,14 +27,19 @@ SharpAgent/
 
 - **Library-first, host-second**: core logic stays in `Sharp.Core`; `Sharp.Cli` is intentionally thin.
 - **Session model is JSONL tree-based** (`id` + `parentId`), enabling branch rebuild and deterministic context recovery.
-- **Tool interface is structured** (JSON arguments + structured content output), no longer plain string-in/string-out.
+- **Tool interface is structured**: `IAgentTool` uses JSON arguments and returns `ToolInvocationResult` with `isError`, `content`, and `details`.
 - **Provider logic is isolated in `Sharp.AI`**; `Sharp.Core` does not depend on provider-specific wire formats.
+- **Extension system**: `ExtensionRuntime` + `ExtensionLoader` support plugin discovery/loading with session before/after lifecycle hooks and explicit reload.
+- **Environment-based credentials**: API keys can be injected via environment variables without storing them in config files.
 
 ## Build & Test
 
 ```bash
-dotnet build SharpAgent.sln
-dotnet test SharpAgent.sln
+dotnet build SharpAgent.sln -m:1 -nr:false -v minimal
+dotnet test SharpAgent.sln -m:1 -nr:false -v minimal
+
+# Single test
+dotnet test --filter "FullyQualifiedName~ClassName.MethodName"
 ```
 
 ## Minimal Library Usage
@@ -136,6 +143,28 @@ dotnet run --project Sharp.Cli -- repl
   In offline/sandboxed environments, use `--input-file scripts/fixtures/models.dev.pi-subset.sample.json`.
   This generator is intentionally scoped to the curated pi-aligned subset, not the full models.dev catalog.
 
+## Key Abstractions
+
+| Interface | Location | Purpose |
+|-----------|----------|---------|
+| `ILlmProvider` | `Sharp.AI` | Unified provider interface for streaming completions |
+| `AgentSession` | `Sharp.Core` | High-level session control (prompt, continue, steer, abort) |
+| `SessionManager` | `Sharp.Core` | JSONL tree persistence with branch rebuild |
+| `IAgentTool` | `Sharp.Core` | Structured tool interface (JSON in, structured result out) |
+
+### Session Model
+
+Sessions are stored as JSONL with a tree structure:
+- Line 1: `session` header with metadata
+- Subsequent lines: entries with `id`, `parentId`, `type`, and `payload`
+- `SessionManager.RebuildContext()` reconstructs context from the current leaf branch
+
+### Tool Model
+
+- `read`, `write`, `edit`, `bash` are the core built-in tools
+- `ToolInvocationResult` returns structured data: `isError`, `content`, `details`
+- `edit` requires unique text matching and returns diff metadata
+
 ## Current Scope
 
 Implemented in this phase:
@@ -147,7 +176,7 @@ Implemented in this phase:
 - Session control surface (`ContinueAsync`, `Steer`, `FollowUp`, `Abort`, `WaitForIdleAsync`).
 - Tree-structured JSONL session persistence (`SessionManager`).
 - Session entries for compaction/branch summary/custom message/label.
-- Built-in coding tools: `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`.
+- Built-in coding tools: `read`, `write`, `edit`, `bash`.
 - Thin CLI host with `run`, `repl`, and `models`; REPL local commands include `:continue`, `:reload`, `:diag`, `:tree`, `:fork`, and `:switch`.
 - CLI renders core lifecycle events for validation (turn/thinking/tool call/tool execution).
 - Core + AI test coverage including an end-to-end session-loop-tool scenario.
@@ -157,6 +186,12 @@ Out of scope in this phase:
 - TUI/Web UI/WinForms.
 - Extension package/version management.
 - Session compaction and branch summary UI.
+
+## Known Constraints
+
+- Some third-party "Anthropic-compatible" gateways may return empty streams or non-standard SSE events; the provider will surface a `no parseable events` error rather than silently completing.
+- Extension loading uses `Assembly.LoadFrom` without `AssemblyLoadContext` isolation; plugins cannot be unloaded without process restart.
+- Extension reload overwrites provider registrations; removed extensions do not automatically roll back their registrations.
 
 ## License
 
