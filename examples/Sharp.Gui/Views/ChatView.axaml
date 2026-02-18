@@ -93,12 +93,37 @@
             </StackPanel>
         </Border>
 
-        <!-- Messages List -->
-        <ScrollViewer x:Name="MessageScrollViewer"
-                      VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled">
-            <ItemsControl ItemsSource="{Binding Messages}"
-                          Padding="16,12">
+        <!-- Main Content Area -->
+        <Panel>
+            <!-- Empty State -->
+            <StackPanel IsVisible="{Binding !HasHistory}"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="16"
+                        Opacity="0.8">
+                <TextBlock Text="👋"
+                           FontSize="64"
+                           HorizontalAlignment="Center"/>
+                <TextBlock Text="Welcome to Sharp Agent"
+                           FontSize="24"
+                           FontWeight="SemiBold"
+                           Foreground="#f1f5f9"
+                           HorizontalAlignment="Center"/>
+                <TextBlock Text="I can help you analyze code, write tests, or answer questions."
+                           FontSize="16"
+                           Foreground="#94a3b8"
+                           HorizontalAlignment="Center"
+                           TextWrapping="Wrap"
+                           MaxWidth="400"
+                           TextAlignment="Center"/>
+            </StackPanel>
+
+            <!-- Messages List -->
+            <ScrollViewer x:Name="MessageScrollViewer"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl ItemsSource="{Binding Messages}"
+                              Padding="16,12">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="vm:ChatMessageViewModel">
                         <Panel>
@@ -236,8 +261,9 @@
                         </Panel>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </ScrollViewer>
+                </ItemsControl>
+            </ScrollViewer>
+        </Panel>
     </DockPanel>
 
 </UserControl>
