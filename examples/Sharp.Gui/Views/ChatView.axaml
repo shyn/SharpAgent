@@ -44,7 +44,7 @@
                     <!-- Input TextBox -->
                     <TextBox x:Name="InputTextBox"
                              Text="{Binding InputText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                             Watermark="Type your message... (Enter for new line, ⌘+Enter or Shift+Enter to send)"
+                             Watermark="Type your message... (Enter to send, Shift+Enter for new line)"
                              AcceptsReturn="True"
                              TextWrapping="Wrap"
                              MaxHeight="120"
