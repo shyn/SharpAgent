@@ -33,6 +33,7 @@
                     <Button DockPanel.Dock="Right"
                             Content="Send"
                             Command="{Binding SendCommand}"
+                            ToolTip.Tip="Send message (Enter)"
                             Margin="8,0,0,0"
                             Padding="16,8"
                             Background="#3b82f6"
@@ -44,7 +45,7 @@
                     <!-- Input TextBox -->
                     <TextBox x:Name="InputTextBox"
                              Text="{Binding InputText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                             Watermark="Type your message... (Enter for new line, ⌘+Enter or Shift+Enter to send)"
+                             Watermark="Type your message... (Enter to send, Shift+Enter for new line)"
                              AcceptsReturn="True"
                              TextWrapping="Wrap"
                              MaxHeight="120"
