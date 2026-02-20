@@ -211,11 +211,26 @@
                                                    Foreground="{Binding RoleColor}"
                                                    FontSize="11"
                                                    FontWeight="SemiBold"
-                                                   Opacity="0.9"/>
+                                                   Opacity="0.9"
+                                                   VerticalAlignment="Center"/>
                                         <TextBlock Text=" ●"
                                                    IsVisible="{Binding IsStreaming}"
                                                    Foreground="#22d3ee"
-                                                   FontSize="11"/>
+                                                   FontSize="11"
+                                                   VerticalAlignment="Center"/>
+
+                                        <!-- Copy Button -->
+                                        <Button Content="📋"
+                                                Click="CopyMessage_OnClick"
+                                                ToolTip.Tip="Copy message"
+                                                AutomationProperties.Name="Copy message"
+                                                Background="Transparent"
+                                                Foreground="#94a3b8"
+                                                BorderThickness="0"
+                                                Padding="6,2"
+                                                Margin="8,0,0,0"
+                                                FontSize="12"
+                                                VerticalAlignment="Center"/>
                                     </StackPanel>
 
                                     <!-- Content -->

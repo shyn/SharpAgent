@@ -1,6 +1,8 @@
 using System.Collections.Specialized;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Sharp.Gui.ViewModels;
@@ -93,5 +95,23 @@ public partial class ChatView : UserControl
         }
         // Regular Enter inserts newline (default behavior with AcceptsReturn=True)
         // No need to handle it specially
+    }
+
+    private async void CopyMessage_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button button && button.DataContext is ChatMessageViewModel vm)
+        {
+            var topLevel = TopLevel.GetTopLevel(this);
+            if (topLevel?.Clipboard != null)
+            {
+                await topLevel.Clipboard.SetTextAsync(vm.Content);
+
+                // Feedback: change icon momentarily
+                var originalContent = button.Content;
+                button.Content = "✓";
+                await Task.Delay(2000);
+                button.Content = originalContent;
+            }
+        }
     }
 }
