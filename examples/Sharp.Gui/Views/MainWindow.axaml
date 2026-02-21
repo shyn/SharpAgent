@@ -73,6 +73,8 @@
                     <!-- Settings gear -->
                     <Button Content="⚙"
                             Command="{Binding OpenSettingsCommand}"
+                            ToolTip.Tip="Settings"
+                            AutomationProperties.Name="Settings"
                             Background="Transparent"
                             Foreground="#94a3b8"
                             FontSize="16"
@@ -86,6 +88,8 @@
                             VerticalAlignment="Center">
                     <Button Content="☰"
                             Command="{Binding ToggleSidebarCommand}"
+                            ToolTip.Tip="Toggle Sidebar"
+                            AutomationProperties.Name="Toggle Sidebar"
                             Background="Transparent"
                             Foreground="#94a3b8"
                             FontSize="16"
@@ -198,6 +202,7 @@
                             BorderBrush="#2d2d4a">
                         <Button Content="← Back to Chat"
                                 Command="{Binding CloseSettingsCommand}"
+                                ToolTip.Tip="Return to chat view"
                                 Background="Transparent"
                                 Foreground="#60a5fa"
                                 FontSize="13"
