@@ -33,7 +33,8 @@ public static class TokenEstimator
 
         // Simple estimation based on character count
         // This is less accurate than tiktoken but much faster and has no dependencies
-        return (int)Math.Ceiling(text.Length / CharactersPerToken);
+        // Optimization: Use integer arithmetic equivalent to Math.Ceiling(length / 4.0)
+        return (text.Length + 3) >> 2;
     }
 
     /// <summary>
@@ -155,11 +156,18 @@ public static class TokenEstimator
     /// <returns>The index where threshold is exceeded, or -1 if never exceeded.</returns>
     public static int FindTokenThresholdIndex(IReadOnlyList<LlmMessage> conversation, string? systemPrompt, int tokenThreshold)
     {
-        var cumulative = CalculateCumulativeTokens(conversation, systemPrompt);
+        // Optimization: Calculate cumulative tokens on the fly to avoid O(N) array allocation
+        var cumulative = 0;
 
-        for (var i = 0; i < cumulative.Length; i++)
+        if (!string.IsNullOrEmpty(systemPrompt))
         {
-            if (cumulative[i] > tokenThreshold)
+            cumulative += MessageOverheadTokens + EstimateTokens(systemPrompt);
+        }
+
+        for (var i = 0; i < conversation.Count; i++)
+        {
+            cumulative += EstimateMessageTokens(conversation[i]);
+            if (cumulative > tokenThreshold)
                 return i;
         }
 
