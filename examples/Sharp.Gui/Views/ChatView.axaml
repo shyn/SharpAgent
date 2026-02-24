@@ -21,6 +21,7 @@
                             Content="✕"
                             Command="{Binding CancelCommand}"
                             ToolTip.Tip="Stop generation"
+                            AutomationProperties.Name="Stop generation"
                             IsVisible="{Binding IsProcessing}"
                             Margin="8,0,0,0"
                             Padding="10,8"
@@ -44,6 +45,7 @@
                     <!-- Input TextBox -->
                     <TextBox x:Name="InputTextBox"
                              Text="{Binding InputText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             AutomationProperties.Name="Message input"
                              Watermark="Type your message... (Enter for new line, ⌘+Enter or Shift+Enter to send)"
                              AcceptsReturn="True"
                              TextWrapping="Wrap"
@@ -93,16 +95,38 @@
             </StackPanel>
         </Border>
 
-        <!-- Messages List -->
-        <ScrollViewer x:Name="MessageScrollViewer"
-                      VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled">
-            <ItemsControl ItemsSource="{Binding Messages}"
-                          Padding="16,12">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="vm:ChatMessageViewModel">
-                        <Panel>
-                            <!-- Tool Call Card -->
+        <!-- Messages Area -->
+        <Panel>
+            <!-- Empty State -->
+            <StackPanel VerticalAlignment="Center"
+                        HorizontalAlignment="Center"
+                        Spacing="20"
+                        IsVisible="{Binding !HasHistory}">
+                <TextBlock Text="👋"
+                           FontSize="64"
+                           HorizontalAlignment="Center"/>
+                <TextBlock Text="How can I help you today?"
+                           FontSize="24"
+                           FontWeight="SemiBold"
+                           Foreground="#e2e8f0"
+                           HorizontalAlignment="Center"/>
+                <TextBlock Text="Ask me anything about your code or project."
+                           FontSize="16"
+                           Foreground="#94a3b8"
+                           HorizontalAlignment="Center"/>
+            </StackPanel>
+
+            <!-- Messages List -->
+            <ScrollViewer x:Name="MessageScrollViewer"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          IsVisible="{Binding HasHistory}">
+                <ItemsControl ItemsSource="{Binding Messages}"
+                              Padding="16,12">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="vm:ChatMessageViewModel">
+                            <Panel>
+                                <!-- Tool Call Card -->
                             <Border IsVisible="{Binding ShowAsToolCard}"
                                     Margin="0,6"
                                     Background="#1a1a2e"
@@ -192,17 +216,17 @@
                                 </DockPanel>
                             </Border>
 
-                            <!-- Regular Message Bubble -->
-                            <Border IsVisible="{Binding !ShowAsToolCard}"
-                                    Margin="0,4"
-                                    Padding="12,8"
-                                    CornerRadius="10"
-                                    MaxWidth="680"
-                                    HorizontalAlignment="{Binding IsUser, Converter={StaticResource BoolToAlignmentConverter}}"
-                                    Background="{Binding IsUser, Converter={StaticResource BoolToBrushConverter}}">
+                                <!-- Regular Message Bubble -->
+                                <Border IsVisible="{Binding !ShowAsToolCard}"
+                                        Margin="0,4"
+                                        Padding="12,8"
+                                        CornerRadius="10"
+                                        MaxWidth="680"
+                                        HorizontalAlignment="{Binding IsUser, Converter={StaticResource BoolToAlignmentConverter}}"
+                                        Background="{Binding IsUser, Converter={StaticResource BoolToBrushConverter}}">
 
-                                <DockPanel>
-                                    <!-- Role Label + Streaming Indicator -->
+                                    <DockPanel>
+                                        <!-- Role Label + Streaming Indicator -->
                                     <StackPanel DockPanel.Dock="Top"
                                                 Orientation="Horizontal"
                                                 HorizontalAlignment="{Binding IsUser, Converter={StaticResource BoolToAlignmentConverter}}"
@@ -218,26 +242,27 @@
                                                    FontSize="11"/>
                                     </StackPanel>
 
-                                    <!-- Content -->
-                                    <TextBox Text="{Binding Content}"
-                                              IsReadOnly="True"
-                                              TextWrapping="Wrap"
-                                              FontSize="14"
-                                              LineHeight="22"
-                                              Foreground="#e2e8f0"
-                                              Background="Transparent"
-                                              BorderThickness="0"
-                                              Padding="0"
-                                              CaretBrush="#e2e8f0"
-                                              SelectionBrush="#3b82f6"
-                                              SelectionForegroundBrush="White"/>
-                                </DockPanel>
-                            </Border>
-                        </Panel>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </ScrollViewer>
+                                        <!-- Content -->
+                                        <TextBox Text="{Binding Content}"
+                                                  IsReadOnly="True"
+                                                  TextWrapping="Wrap"
+                                                  FontSize="14"
+                                                  LineHeight="22"
+                                                  Foreground="#e2e8f0"
+                                                  Background="Transparent"
+                                                  BorderThickness="0"
+                                                  Padding="0"
+                                                  CaretBrush="#e2e8f0"
+                                                  SelectionBrush="#3b82f6"
+                                                  SelectionForegroundBrush="White"/>
+                                    </DockPanel>
+                                </Border>
+                            </Panel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Panel>
     </DockPanel>
 
 </UserControl>

@@ -63,6 +63,11 @@ public partial class ChatViewModel : ViewModelBase
 
     public ObservableCollection<ChatMessageViewModel> Messages { get; } = [];
 
+    public ChatViewModel()
+    {
+        Messages.CollectionChanged += (s, e) => HasHistory = Messages.Count > 0;
+    }
+
     partial void OnHasHistoryChanged(bool value)
     {
         BrowseWorkspaceCommand.NotifyCanExecuteChanged();
@@ -165,7 +170,6 @@ public partial class ChatViewModel : ViewModelBase
             }
         }
 
-        HasHistory = Messages.Count > 0;
         return Task.CompletedTask;
     }
 
@@ -346,7 +350,6 @@ public partial class ChatViewModel : ViewModelBase
             currentAssistant?.Complete();
             currentThinking?.Complete();
             IsProcessing = false;
-            HasHistory = Messages.Count > 0;
             StatusText = "Ready";
             _cts?.Dispose();
             _cts = null;
@@ -376,7 +379,7 @@ public partial class ChatViewModel : ViewModelBase
         _cts?.Dispose();
         _session?.Dispose();
         _session = null;
-        HasHistory = false;
+        Messages.Clear();
         RefreshCommandStates();
     }
 }
