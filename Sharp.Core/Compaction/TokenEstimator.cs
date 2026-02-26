@@ -14,7 +14,7 @@ public static class TokenEstimator
     /// Approximate number of characters per token for estimation purposes.
     /// This is a rough approximation that works for English text.
     /// </summary>
-    public const double CharactersPerToken = 4.0;
+    public const int CharactersPerToken = 4;
 
     /// <summary>
     /// Base token count for message overhead (role markers, formatting).
@@ -33,7 +33,8 @@ public static class TokenEstimator
 
         // Simple estimation based on character count
         // This is less accurate than tiktoken but much faster and has no dependencies
-        return (int)Math.Ceiling(text.Length / CharactersPerToken);
+        // Uses integer arithmetic equivalent to ceil(length / 4.0)
+        return (text.Length + 3) / CharactersPerToken;
     }
 
     /// <summary>
@@ -155,11 +156,18 @@ public static class TokenEstimator
     /// <returns>The index where threshold is exceeded, or -1 if never exceeded.</returns>
     public static int FindTokenThresholdIndex(IReadOnlyList<LlmMessage> conversation, string? systemPrompt, int tokenThreshold)
     {
-        var cumulative = CalculateCumulativeTokens(conversation, systemPrompt);
+        // Optimization: Iterate directly to avoid O(N) array allocation from CalculateCumulativeTokens
+        var currentTokens = 0;
 
-        for (var i = 0; i < cumulative.Length; i++)
+        if (!string.IsNullOrEmpty(systemPrompt))
         {
-            if (cumulative[i] > tokenThreshold)
+            currentTokens += MessageOverheadTokens + EstimateTokens(systemPrompt);
+        }
+
+        for (var i = 0; i < conversation.Count; i++)
+        {
+            currentTokens += EstimateMessageTokens(conversation[i]);
+            if (currentTokens > tokenThreshold)
                 return i;
         }
 

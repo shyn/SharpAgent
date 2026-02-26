@@ -173,13 +173,13 @@ public static class FileOperationTracker
             foreach (var block in payload.Message.Content)
             {
                 if (block is ToolCallContentBlock toolCall)
-            {
-                operations = operations.Merge(ExtractFromToolCall(toolCall));
-            }
-            else if (block is ToolResultContentBlock toolResult)
-            {
-                operations = operations.Merge(ExtractFromToolResult(toolResult));
-            }
+                {
+                    operations = operations.Merge(ExtractFromToolCall(toolCall));
+                }
+                else if (block is ToolResultContentBlock toolResult)
+                {
+                    operations = operations.Merge(ExtractFromToolResult(toolResult));
+                }
             }
         }
         catch
