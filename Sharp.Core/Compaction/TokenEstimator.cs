@@ -33,7 +33,10 @@ public static class TokenEstimator
 
         // Simple estimation based on character count
         // This is less accurate than tiktoken but much faster and has no dependencies
-        return (int)Math.Ceiling(text.Length / CharactersPerToken);
+        // Optimized integer arithmetic for: Math.Ceiling(text.Length / 4.0)
+        // (Length + 3) / 4 performs integer division with ceiling
+        // Note: This assumes CharactersPerToken is 4.0
+        return (text.Length + 3) >> 2;
     }
 
     /// <summary>
@@ -47,10 +50,12 @@ public static class TokenEstimator
             return 0;
 
         var contentTokens = 0;
+        var content = message.Content;
+        var count = content.Count;
 
-        foreach (var block in message.Content)
+        for (var i = 0; i < count; i++)
         {
-            contentTokens += block switch
+            contentTokens += content[i] switch
             {
                 TextContentBlock text => EstimateTokens(text.Text),
                 ThinkingContentBlock thinking => EstimateTokens(thinking.Text),
@@ -79,9 +84,10 @@ public static class TokenEstimator
             total += MessageOverheadTokens + EstimateTokens(systemPrompt);
         }
 
-        foreach (var message in conversation)
+        var count = conversation.Count;
+        for (var i = 0; i < count; i++)
         {
-            total += EstimateMessageTokens(message);
+            total += EstimateMessageTokens(conversation[i]);
         }
 
         return total;
@@ -129,7 +135,8 @@ public static class TokenEstimator
     /// <returns>An array of cumulative token counts.</returns>
     public static int[] CalculateCumulativeTokens(IReadOnlyList<LlmMessage> conversation, string? systemPrompt)
     {
-        var result = new int[conversation.Count];
+        var count = conversation.Count;
+        var result = new int[count];
         var cumulative = 0;
 
         if (!string.IsNullOrEmpty(systemPrompt))
@@ -137,7 +144,7 @@ public static class TokenEstimator
             cumulative += MessageOverheadTokens + EstimateTokens(systemPrompt);
         }
 
-        for (var i = 0; i < conversation.Count; i++)
+        for (var i = 0; i < count; i++)
         {
             cumulative += EstimateMessageTokens(conversation[i]);
             result[i] = cumulative;
@@ -155,11 +162,18 @@ public static class TokenEstimator
     /// <returns>The index where threshold is exceeded, or -1 if never exceeded.</returns>
     public static int FindTokenThresholdIndex(IReadOnlyList<LlmMessage> conversation, string? systemPrompt, int tokenThreshold)
     {
-        var cumulative = CalculateCumulativeTokens(conversation, systemPrompt);
+        var cumulative = 0;
 
-        for (var i = 0; i < cumulative.Length; i++)
+        if (!string.IsNullOrEmpty(systemPrompt))
         {
-            if (cumulative[i] > tokenThreshold)
+            cumulative += MessageOverheadTokens + EstimateTokens(systemPrompt);
+        }
+
+        var count = conversation.Count;
+        for (var i = 0; i < count; i++)
+        {
+            cumulative += EstimateMessageTokens(conversation[i]);
+            if (cumulative > tokenThreshold)
                 return i;
         }
 
