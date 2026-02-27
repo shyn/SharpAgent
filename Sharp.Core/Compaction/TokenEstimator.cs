@@ -155,11 +155,17 @@ public static class TokenEstimator
     /// <returns>The index where threshold is exceeded, or -1 if never exceeded.</returns>
     public static int FindTokenThresholdIndex(IReadOnlyList<LlmMessage> conversation, string? systemPrompt, int tokenThreshold)
     {
-        var cumulative = CalculateCumulativeTokens(conversation, systemPrompt);
+        var cumulative = 0;
 
-        for (var i = 0; i < cumulative.Length; i++)
+        if (!string.IsNullOrEmpty(systemPrompt))
         {
-            if (cumulative[i] > tokenThreshold)
+            cumulative += MessageOverheadTokens + EstimateTokens(systemPrompt);
+        }
+
+        for (var i = 0; i < conversation.Count; i++)
+        {
+            cumulative += EstimateMessageTokens(conversation[i]);
+            if (cumulative > tokenThreshold)
                 return i;
         }
 
