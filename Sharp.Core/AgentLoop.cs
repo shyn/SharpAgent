@@ -32,7 +32,8 @@ public sealed class AgentLoop
         if (compactionService == null)
             return false;
 
-        var tokenCount = TokenEstimator.EstimateConversationTokens(conversation.ToList(), null);
+        // Optimization: Pass conversation directly to avoid O(N) memory allocation from .ToList()
+        var tokenCount = TokenEstimator.EstimateConversationTokens(conversation, null);
 
         // Get context window from settings or use a reasonable default
         var contextWindow = 128000; // Default for many modern models
@@ -50,7 +51,8 @@ public sealed class AgentLoop
     /// Estimates the current token count for the conversation.
     /// </summary>
     public static int EstimateTokens(IReadOnlyList<LlmMessage> conversation, string? systemPrompt = null)
-        => TokenEstimator.EstimateConversationTokens(conversation.ToList(), systemPrompt);
+        // Optimization: Pass conversation directly to avoid O(N) memory allocation from .ToList()
+        => TokenEstimator.EstimateConversationTokens(conversation, systemPrompt);
 
     public IAsyncEnumerable<AgentEvent> RunAsync(
         List<LlmMessage> conversation,
