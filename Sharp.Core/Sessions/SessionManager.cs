@@ -220,8 +220,7 @@ public sealed class SessionManager
     /// <returns>True if the conversation has been compacted.</returns>
     public bool HasCompaction()
     {
-        var branch = GetBranch(_currentLeafId);
-        return branch.Any(e => e.Type == "compaction");
+        return EnumerateBranchFromLeaf().Any(e => e.Type == "compaction");
     }
 
     /// <summary>
@@ -230,13 +229,11 @@ public sealed class SessionManager
     /// <returns>The compaction entry payload, or null if no compaction exists.</returns>
     public CompactionEntryPayload? GetLatestCompaction()
     {
-        var branch = GetBranch(_currentLeafId);
-
-        for (var i = branch.Count - 1; i >= 0; i--)
+        foreach (var entry in EnumerateBranchFromLeaf())
         {
-            if (branch[i].Type == "compaction")
+            if (entry.Type == "compaction")
             {
-                return branch[i].Payload.Deserialize<CompactionEntryPayload>(JsonDefaults.Options);
+                return entry.Payload.Deserialize<CompactionEntryPayload>(JsonDefaults.Options);
             }
         }
 
@@ -270,49 +267,73 @@ public sealed class SessionManager
         return branch;
     }
 
+    private IEnumerable<SessionEntryEnvelope> EnumerateBranchFromLeaf(string? leafEntryId = null)
+    {
+        var effectiveLeaf = leafEntryId ?? _currentLeafId;
+        var cursor = effectiveLeaf;
+
+        while (cursor != null && _entriesById.TryGetValue(cursor, out var entry))
+        {
+            yield return entry;
+            cursor = entry.ParentId;
+        }
+    }
+
     public IReadOnlyList<LlmMessage> RebuildContext(string? leafEntryId = null)
     {
-        var branch = GetBranch(leafEntryId);
         var messages = new List<LlmMessage>();
+        var branchSuffix = new List<SessionEntryEnvelope>();
+        var keptEntries = new List<SessionEntryEnvelope>();
 
-        var compactionIndex = -1;
         CompactionEntryPayload? compactionPayload = null;
-        for (var i = 0; i < branch.Count; i++)
-        {
-            if (branch[i].Type != "compaction")
-                continue;
+        var foundKept = false;
 
-            compactionIndex = i;
-            compactionPayload = branch[i].Payload.Deserialize<CompactionEntryPayload>(JsonDefaults.Options);
+        foreach (var entry in EnumerateBranchFromLeaf(leafEntryId))
+        {
+            if (compactionPayload == null)
+            {
+                if (entry.Type == "compaction")
+                {
+                    compactionPayload = entry.Payload.Deserialize<CompactionEntryPayload>(JsonDefaults.Options);
+                }
+                else
+                {
+                    branchSuffix.Add(entry);
+                }
+            }
+            else
+            {
+                if (string.Equals(entry.Id, compactionPayload.FirstKeptEntryId, StringComparison.Ordinal))
+                {
+                    keptEntries.Add(entry);
+                    foundKept = true;
+                    break;
+                }
+                keptEntries.Add(entry);
+            }
         }
 
-        if (compactionIndex >= 0 && compactionPayload != null)
+        if (compactionPayload != null)
         {
             messages.Add(LlmMessage.UserText(CompactionSummaryPrefix + compactionPayload.Summary + CompactionSummarySuffix));
 
-            var firstKeptIndex = -1;
-            for (var i = 0; i < branch.Count; i++)
+            if (foundKept)
             {
-                if (!string.Equals(branch[i].Id, compactionPayload.FirstKeptEntryId, StringComparison.Ordinal))
-                    continue;
-
-                firstKeptIndex = i;
-                break;
-            }
-            if (firstKeptIndex >= 0 && firstKeptIndex < compactionIndex)
-            {
-                for (var i = firstKeptIndex; i < compactionIndex; i++)
-                    AppendContextEntry(branch[i], messages);
+                keptEntries.Reverse();
+                foreach (var entry in keptEntries)
+                    AppendContextEntry(entry, messages);
             }
 
-            for (var i = compactionIndex + 1; i < branch.Count; i++)
-                AppendContextEntry(branch[i], messages);
-
-            return messages;
+            branchSuffix.Reverse();
+            foreach (var entry in branchSuffix)
+                AppendContextEntry(entry, messages);
         }
-
-        foreach (var entry in branch)
-            AppendContextEntry(entry, messages);
+        else
+        {
+            branchSuffix.Reverse();
+            foreach (var entry in branchSuffix)
+                AppendContextEntry(entry, messages);
+        }
 
         return messages;
     }
