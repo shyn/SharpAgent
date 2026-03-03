@@ -1,0 +1,3 @@
+## 2025-03-03 - Unnecessary ToList() allocations in hot paths
+**Learning:** Calling `.ToList()` on `IReadOnlyList` or `IEnumerable` just to satisfy an interface or before passing to methods (like `EstimateConversationTokens`) creates an unnecessary `O(N)` memory allocation. In hot loops like token estimation during agent turns, this puts significant pressure on the Garbage Collector and degrades performance (allocating huge arrays when checking token limits repeatedly).
+**Action:** When a method accepts `IReadOnlyList<T>`, pass collections directly. Avoid using `.ToList()` as a conversion mechanism unless mutating a copy of the list is explicitly required.
