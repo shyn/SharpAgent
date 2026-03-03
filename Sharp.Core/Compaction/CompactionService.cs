@@ -100,7 +100,18 @@ public sealed class CompactionService
         // Build conversation from entries and preserve entry index mapping
         var conversationEntries = BuildConversationEntries(entries);
         var conversation = conversationEntries.Select(e => e.Message).ToList();
-        var tokenCount = TokenEstimator.EstimateConversationTokens(conversation, systemPrompt);
+
+        // Optimization: Pre-calculate token counts for messages to avoid re-calculation
+        var messageTokenCounts = conversation.Select(m => TokenEstimator.EstimateMessageTokens(m)).ToArray();
+        var totalMessageTokens = messageTokenCounts.Sum();
+
+        var systemPromptTokens = 0;
+        if (!string.IsNullOrEmpty(systemPrompt))
+        {
+            systemPromptTokens = TokenEstimator.MessageOverheadTokens + TokenEstimator.EstimateTokens(systemPrompt);
+        }
+
+        var tokenCount = totalMessageTokens + systemPromptTokens;
 
         if (!ShouldCompact(tokenCount, model.ContextWindow))
         {
@@ -110,7 +121,7 @@ public sealed class CompactionService
 
         // Find the cut point where we should start preserving messages
         var targetTokens = CalculateTargetTokens(model.ContextWindow);
-        var cutPoint = FindCutPoint(conversation, targetTokens);
+        var cutPoint = FindCutPoint(conversation, targetTokens, messageTokenCounts, totalMessageTokens, systemPromptTokens);
 
         if (cutPoint <= 0)
         {
@@ -260,12 +271,17 @@ public sealed class CompactionService
     /// Finds the index at which to cut the conversation for compaction.
     /// Preserves at least KeepRecentTokens from the end.
     /// </summary>
-    private int FindCutPoint(IReadOnlyList<LlmMessage> conversation, int targetTokens)
+    private int FindCutPoint(
+        IReadOnlyList<LlmMessage> conversation,
+        int targetTokens,
+        int[] messageTokenCounts,
+        int totalMessageTokens,
+        int systemPromptTokens)
     {
         if (conversation.Count == 0)
             return 0;
 
-        var totalTokens = TokenEstimator.EstimateConversationTokens(conversation, null);
+        var totalTokens = totalMessageTokens + systemPromptTokens;
         if (totalTokens <= targetTokens)
             return 0;
 
@@ -275,7 +291,8 @@ public sealed class CompactionService
 
         for (var i = conversation.Count - 1; i >= 0; i--)
         {
-            var messageTokens = TokenEstimator.EstimateMessageTokens(conversation[i]);
+            // Use pre-calculated token count
+            var messageTokens = messageTokenCounts[i];
             recentTokens += messageTokens;
 
             if (recentTokens >= _settings.KeepRecentTokens)
@@ -286,7 +303,12 @@ public sealed class CompactionService
         }
 
         // Ensure we're removing enough tokens to be worthwhile
-        var tokensBeforeCut = TokenEstimator.EstimateConversationTokens(conversation.Take(cutIndex).ToList(), null);
+        // Optimization: Calculate tokensBeforeCut using subtraction instead of re-estimation
+        // tokensBeforeCut = TotalMessageTokens - TokensFromCutIndexToEnd
+        // recentTokens contains accumulated tokens from End down to cutIndex (inclusive)
+        var tokensFromCutIndexToEnd = recentTokens;
+        var tokensBeforeCut = totalMessageTokens - tokensFromCutIndexToEnd;
+
         if (tokensBeforeCut < _settings.MinTokensToCompact)
         {
             _logger?.LogDebug(
@@ -297,7 +319,8 @@ public sealed class CompactionService
             var accumulatedTokens = 0;
             for (var i = 0; i < cutIndex; i++)
             {
-                accumulatedTokens += TokenEstimator.EstimateMessageTokens(conversation[i]);
+                // Use pre-calculated token count
+                accumulatedTokens += messageTokenCounts[i];
                 if (accumulatedTokens >= _settings.MinTokensToCompact)
                 {
                     cutIndex = i + 1;
