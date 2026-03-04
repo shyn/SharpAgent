@@ -139,7 +139,7 @@ public sealed class CompactionService
 
         var tokensAfter = TokenEstimator.EstimateTokens(summary) +
                          TokenEstimator.EstimateConversationTokens(
-                             conversation.Skip(cutPoint).ToList(), systemPrompt);
+                             conversation.Skip(cutPoint), systemPrompt);
 
         _logger?.LogInformation(
             "Compacted {CompactedCount} entries into summary, saved ~{TokensSaved} tokens",
@@ -286,7 +286,7 @@ public sealed class CompactionService
         }
 
         // Ensure we're removing enough tokens to be worthwhile
-        var tokensBeforeCut = TokenEstimator.EstimateConversationTokens(conversation.Take(cutIndex).ToList(), null);
+        var tokensBeforeCut = TokenEstimator.EstimateConversationTokens(conversation.Take(cutIndex), null);
         if (tokensBeforeCut < _settings.MinTokensToCompact)
         {
             _logger?.LogDebug(
