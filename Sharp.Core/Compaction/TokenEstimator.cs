@@ -70,7 +70,7 @@ public static class TokenEstimator
     /// <param name="conversation">The list of messages.</param>
     /// <param name="systemPrompt">Optional system prompt to include.</param>
     /// <returns>The estimated total token count.</returns>
-    public static int EstimateConversationTokens(IReadOnlyList<LlmMessage> conversation, string? systemPrompt)
+    public static int EstimateConversationTokens(IEnumerable<LlmMessage> conversation, string? systemPrompt)
     {
         var total = 0;
 
@@ -127,9 +127,9 @@ public static class TokenEstimator
     /// <param name="conversation">The conversation messages.</param>
     /// <param name="systemPrompt">Optional system prompt.</param>
     /// <returns>An array of cumulative token counts.</returns>
-    public static int[] CalculateCumulativeTokens(IReadOnlyList<LlmMessage> conversation, string? systemPrompt)
+    public static int[] CalculateCumulativeTokens(IEnumerable<LlmMessage> conversation, string? systemPrompt)
     {
-        var result = new int[conversation.Count];
+        var result = new List<int>();
         var cumulative = 0;
 
         if (!string.IsNullOrEmpty(systemPrompt))
@@ -137,13 +137,13 @@ public static class TokenEstimator
             cumulative += MessageOverheadTokens + EstimateTokens(systemPrompt);
         }
 
-        for (var i = 0; i < conversation.Count; i++)
+        foreach (var message in conversation)
         {
-            cumulative += EstimateMessageTokens(conversation[i]);
-            result[i] = cumulative;
+            cumulative += EstimateMessageTokens(message);
+            result.Add(cumulative);
         }
 
-        return result;
+        return result.ToArray();
     }
 
     /// <summary>
