@@ -10,12 +10,7 @@ public sealed record SessionHeader(
     string WorkingDirectory,
     DateTimeOffset TimestampUtc);
 
-public sealed record SessionEntryEnvelope(
-    string Type,
-    string Id,
-    string? ParentId,
-    DateTimeOffset TimestampUtc,
-    JsonElement Payload);
+// SessionEntryEnvelope is now in its own file
 
 public sealed record MessageEntryPayload(LlmMessage Message);
 
