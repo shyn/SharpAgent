@@ -107,7 +107,7 @@ public partial class ChatViewModel : ViewModelBase
             {
                 case "message":
                 {
-                    var payload = entry.Payload.Deserialize<MessageEntryPayload>(JsonDefaults.Options);
+                    var payload = entry.GetPayload<MessageEntryPayload>(JsonDefaults.Options);
                     if (payload?.Message == null) continue;
 
                     switch (payload.Message.Role)
@@ -154,7 +154,7 @@ public partial class ChatViewModel : ViewModelBase
 
                 case "compaction":
                 {
-                    var payload = entry.Payload.Deserialize<CompactionEntryPayload>(JsonDefaults.Options);
+                    var payload = entry.GetPayload<CompactionEntryPayload>(JsonDefaults.Options);
                     if (payload != null)
                     {
                         Messages.Add(new ChatMessageViewModel(ChatMessageRole.Tool,

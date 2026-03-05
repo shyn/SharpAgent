@@ -238,13 +238,13 @@ public sealed class CompactionService
             switch (entry.Type)
             {
                 case "message":
-                    var messagePayload = entry.Payload.Deserialize<MessageEntryPayload>(JsonDefaults.Options);
+                    var messagePayload = entry.GetPayload<MessageEntryPayload>(JsonDefaults.Options);
                     if (messagePayload?.Message != null)
                         messages.Add(new ConversationEntry(i, messagePayload.Message));
                     break;
 
                 case "custom_message":
-                    var customPayload = entry.Payload.Deserialize<CustomMessageEntryPayload>(JsonDefaults.Options);
+                    var customPayload = entry.GetPayload<CustomMessageEntryPayload>(JsonDefaults.Options);
                     if (!string.IsNullOrWhiteSpace(customPayload?.Content))
                         messages.Add(new ConversationEntry(i, LlmMessage.UserText(customPayload.Content)));
                     break;

@@ -166,20 +166,20 @@ public static class FileOperationTracker
 
         try
         {
-            var payload = entry.Payload.Deserialize<MessageEntryPayload>(JsonDefaults.Options);
+            var payload = entry.GetPayload<MessageEntryPayload>(JsonDefaults.Options);
             if (payload?.Message?.Content == null)
                 return operations;
 
             foreach (var block in payload.Message.Content)
             {
                 if (block is ToolCallContentBlock toolCall)
-            {
-                operations = operations.Merge(ExtractFromToolCall(toolCall));
-            }
-            else if (block is ToolResultContentBlock toolResult)
-            {
-                operations = operations.Merge(ExtractFromToolResult(toolResult));
-            }
+                {
+                    operations = operations.Merge(ExtractFromToolCall(toolCall));
+                }
+                else if (block is ToolResultContentBlock toolResult)
+                {
+                    operations = operations.Merge(ExtractFromToolResult(toolResult));
+                }
             }
         }
         catch
@@ -196,7 +196,7 @@ public static class FileOperationTracker
 
         try
         {
-            var payload = entry.Payload.Deserialize<CustomMessageEntryPayload>(JsonDefaults.Options);
+            var payload = entry.GetPayload<CustomMessageEntryPayload>(JsonDefaults.Options);
             if (string.IsNullOrWhiteSpace(payload?.Content))
                 return operations;
 
