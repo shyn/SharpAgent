@@ -236,7 +236,7 @@ public sealed class SessionManager
         {
             if (branch[i].Type == "compaction")
             {
-                return branch[i].Payload.Deserialize<CompactionEntryPayload>(JsonDefaults.Options);
+                return branch[i].GetPayload<CompactionEntryPayload>();
             }
         }
 
@@ -283,7 +283,7 @@ public sealed class SessionManager
                 continue;
 
             compactionIndex = i;
-            compactionPayload = branch[i].Payload.Deserialize<CompactionEntryPayload>(JsonDefaults.Options);
+            compactionPayload = branch[i].GetPayload<CompactionEntryPayload>();
         }
 
         if (compactionIndex >= 0 && compactionPayload != null)
@@ -323,21 +323,21 @@ public sealed class SessionManager
         {
             case "message":
             {
-                var payload = entry.Payload.Deserialize<MessageEntryPayload>(JsonDefaults.Options);
+                var payload = entry.GetPayload<MessageEntryPayload>();
                 if (payload?.Message != null)
                     messages.Add(payload.Message);
                 break;
             }
             case "custom_message":
             {
-                var payload = entry.Payload.Deserialize<CustomMessageEntryPayload>(JsonDefaults.Options);
+                var payload = entry.GetPayload<CustomMessageEntryPayload>();
                 if (!string.IsNullOrWhiteSpace(payload?.Content))
                     messages.Add(LlmMessage.UserText(payload.Content));
                 break;
             }
             case "branch_summary":
             {
-                var payload = entry.Payload.Deserialize<BranchSummaryEntryPayload>(JsonDefaults.Options);
+                var payload = entry.GetPayload<BranchSummaryEntryPayload>();
                 if (!string.IsNullOrWhiteSpace(payload?.Summary))
                     messages.Add(LlmMessage.UserText(BranchSummaryPrefix + payload.Summary + BranchSummarySuffix));
                 break;
@@ -354,11 +354,11 @@ public sealed class SessionManager
         try
         {
             var entry = new SessionEntryEnvelope(
-                Type: type,
-                Id: Guid.NewGuid().ToString("N")[..8],
-                ParentId: _currentLeafId,
-                TimestampUtc: DateTimeOffset.UtcNow,
-                Payload: JsonSerializer.SerializeToElement(payload, JsonDefaults.Options));
+                type: type,
+                id: Guid.NewGuid().ToString("N")[..8],
+                parentId: _currentLeafId,
+                timestampUtc: DateTimeOffset.UtcNow,
+                payload: JsonSerializer.SerializeToElement(payload, JsonDefaults.Options));
 
             await using var writer = new StreamWriter(SessionFilePath, append: true);
             var json = JsonSerializer.Serialize(entry, JsonDefaults.Options);

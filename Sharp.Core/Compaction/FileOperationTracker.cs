@@ -166,7 +166,7 @@ public static class FileOperationTracker
 
         try
         {
-            var payload = entry.Payload.Deserialize<MessageEntryPayload>(JsonDefaults.Options);
+            var payload = entry.GetPayload<MessageEntryPayload>();
             if (payload?.Message?.Content == null)
                 return operations;
 
@@ -196,7 +196,7 @@ public static class FileOperationTracker
 
         try
         {
-            var payload = entry.Payload.Deserialize<CustomMessageEntryPayload>(JsonDefaults.Options);
+            var payload = entry.GetPayload<CustomMessageEntryPayload>();
             if (string.IsNullOrWhiteSpace(payload?.Content))
                 return operations;
 

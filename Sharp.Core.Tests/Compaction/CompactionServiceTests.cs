@@ -212,11 +212,11 @@ public class CompactionServiceTests
         DateTimeOffset timestamp,
         LlmMessage message)
         => new(
-            Type: "message",
-            Id: id,
-            ParentId: parentId,
-            TimestampUtc: timestamp,
-            Payload: JsonSerializer.SerializeToElement(new MessageEntryPayload(message), JsonDefaults.Options));
+            type: "message",
+            id: id,
+            parentId: parentId,
+            timestampUtc: timestamp,
+            payload: JsonSerializer.SerializeToElement(new MessageEntryPayload(message), JsonDefaults.Options));
 
     private static SessionEntryEnvelope CreateModelChangeEntry(
         string id,
@@ -225,9 +225,9 @@ public class CompactionServiceTests
         string provider,
         string modelId)
         => new(
-            Type: "model_change",
-            Id: id,
-            ParentId: parentId,
-            TimestampUtc: timestamp,
-            Payload: JsonSerializer.SerializeToElement(new ModelChangeEntryPayload(provider, modelId), JsonDefaults.Options));
+            type: "model_change",
+            id: id,
+            parentId: parentId,
+            timestampUtc: timestamp,
+            payload: JsonSerializer.SerializeToElement(new ModelChangeEntryPayload(provider, modelId), JsonDefaults.Options));
 }
