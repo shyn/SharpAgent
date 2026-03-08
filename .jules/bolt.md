@@ -1,4 +1,7 @@
-
 ## 2025-03-04 - Removing .ToList() allocations in token estimation
 **Learning:** Found an anti-pattern where `.ToList()` was frequently called before passing `IReadOnlyList<LlmMessage>` into `TokenEstimator.EstimateConversationTokens`, causing unnecessary list allocations and copying, especially during looping and slicing operations (e.g. `Take()`) in hot paths like `AgentLoop` and `CompactionService`.
 **Action:** Overloaded `TokenEstimator.EstimateConversationTokens` and `TokenEstimator.CalculateCumulativeTokens` to accept `IEnumerable<LlmMessage>` instead of `IReadOnlyList<LlmMessage>`, preventing the need for `.ToList()` and eliminating the memory allocation bottleneck.
+
+## 2025-03-04 - Memoizing SessionEntryEnvelope deserialization
+**Learning:** Found an anti-pattern where `SessionEntryEnvelope.Payload.Deserialize<T>()` was called repeatedly for the same entry, particularly during history traversals or file operations analysis. Because `SessionEntryEnvelope` is a `record`, adding memoization safely required special handling for C#'s generated equality and copy semantics (e.g., overriding the copy constructor for `with` expressions to clear the cache, and overriding `Equals`/`GetHashCode` to exclude the private field).
+**Action:** Implemented a memoization pattern via a `_cachedPayload` field and a new `GetPayload<T>()` method in `SessionEntryEnvelope`. Overrode equality logic and the `record` copy constructor to safely manage the cache, dramatically reducing JSON deserialization overhead in hot loops.

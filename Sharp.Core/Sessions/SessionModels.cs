@@ -15,7 +15,52 @@ public sealed record SessionEntryEnvelope(
     string Id,
     string? ParentId,
     DateTimeOffset TimestampUtc,
-    JsonElement Payload);
+    JsonElement Payload)
+{
+    private object? _cachedPayload;
+
+    public T? GetPayload<T>() where T : class
+    {
+        if (_cachedPayload is T cached)
+            return cached;
+
+        var deserialized = Payload.Deserialize<T>(Sharp.AI.Infrastructure.JsonDefaults.Options);
+        _cachedPayload = deserialized;
+        return deserialized;
+    }
+
+    private SessionEntryEnvelope(SessionEntryEnvelope original)
+    {
+        Type = original.Type;
+        Id = original.Id;
+        ParentId = original.ParentId;
+        TimestampUtc = original.TimestampUtc;
+        Payload = original.Payload;
+        _cachedPayload = null;
+    }
+
+    public bool Equals(SessionEntryEnvelope? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+
+        return Type == other.Type &&
+               Id == other.Id &&
+               ParentId == other.ParentId &&
+               TimestampUtc == other.TimestampUtc &&
+               EqualityComparer<JsonElement>.Default.Equals(Payload, other.Payload);
+    }
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(
+            Type,
+            Id,
+            ParentId,
+            TimestampUtc,
+            EqualityComparer<JsonElement>.Default.GetHashCode(Payload));
+    }
+}
 
 public sealed record MessageEntryPayload(LlmMessage Message);
 
