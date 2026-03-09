@@ -626,7 +626,7 @@ public sealed class ExtensionRuntimeTests : IDisposable
             tokensBefore: 42);
 
         Assert.NotNull(entry);
-        var payload = entry!.Payload.Deserialize<CompactionEntryPayload>(JsonDefaults.Options);
+        var payload = entry!.GetPayload<CompactionEntryPayload>();
         Assert.NotNull(payload);
         Assert.Equal("patched-summary", payload!.Summary);
         Assert.Equal(142, payload.TokensBefore);
