@@ -99,7 +99,10 @@ public sealed class CompactionService
 
         // Build conversation from entries and preserve entry index mapping
         var conversationEntries = BuildConversationEntries(entries);
-        var conversation = conversationEntries.Select(e => e.Message).ToList();
+        var conversation = new List<LlmMessage>(conversationEntries.Count);
+        foreach (var e in conversationEntries)
+            conversation.Add(e.Message);
+
         var tokenCount = TokenEstimator.EstimateConversationTokens(conversation, systemPrompt);
 
         if (!ShouldCompact(tokenCount, model.ContextWindow))
@@ -226,7 +229,13 @@ public sealed class CompactionService
     /// Builds a list of LLM messages from session entries.
     /// </summary>
     private static List<LlmMessage> BuildConversation(IReadOnlyList<SessionEntryEnvelope> entries)
-        => BuildConversationEntries(entries).Select(e => e.Message).ToList();
+    {
+        var conversationEntries = BuildConversationEntries(entries);
+        var list = new List<LlmMessage>(conversationEntries.Count);
+        foreach (var e in conversationEntries)
+            list.Add(e.Message);
+        return list;
+    }
 
     private static List<ConversationEntry> BuildConversationEntries(IReadOnlyList<SessionEntryEnvelope> entries)
     {

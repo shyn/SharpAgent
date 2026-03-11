@@ -270,7 +270,7 @@ public sealed class SessionManager
         return branch;
     }
 
-    public IReadOnlyList<LlmMessage> RebuildContext(string? leafEntryId = null)
+    public List<LlmMessage> RebuildContext(string? leafEntryId = null)
     {
         var branch = GetBranch(leafEntryId);
         var messages = new List<LlmMessage>();
