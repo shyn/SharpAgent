@@ -42,16 +42,32 @@ public sealed class AnthropicLlmProvider : ILlmProvider
         normalizedMessages = MessageTransforms.NormalizeToolCallIds(normalizedMessages, ToolCallIdNormalizer.Normalize);
         normalizedMessages = MessageTransforms.ConvertUnsignedThinkingToText(normalizedMessages);
         normalizedMessages = MessageTransforms.ConvertNonAnthropicThinkingSignaturesToText(normalizedMessages);
+        var payloadMessages = new List<AnthropicMessage>(normalizedMessages.Count);
+        foreach (var m in normalizedMessages)
+        {
+            if (m.Role != LlmMessageRole.System)
+            {
+                payloadMessages.Add(ToAnthropicMessage(m));
+            }
+        }
+
+        List<AnthropicTool>? payloadTools = null;
+        if (request.Tools.Count > 0)
+        {
+            payloadTools = new List<AnthropicTool>(request.Tools.Count);
+            foreach (var tool in request.Tools)
+            {
+                payloadTools.Add(ToAnthropicTool(tool));
+            }
+        }
+
         var payload = new AnthropicRequest
         {
             Model = request.Model.ModelId,
             MaxTokens = request.MaxOutputTokens ?? request.Model.MaxOutputTokens ?? 8192,
             System = request.SystemPrompt,
-            Messages = normalizedMessages
-                .Where(m => m.Role != LlmMessageRole.System)
-                .Select(ToAnthropicMessage)
-                .ToList(),
-            Tools = request.Tools.Count > 0 ? request.Tools.Select(ToAnthropicTool).ToList() : null,
+            Messages = payloadMessages,
+            Tools = payloadTools,
             Stream = true,
             Thinking = thinkingBudget == null
                 ? null
@@ -468,107 +484,107 @@ public sealed class AnthropicLlmProvider : ILlmProvider
         switch (eventType)
         {
             case "message_start":
-            {
-                var start = JsonSerializer.Deserialize<MessageStartPayload>(data, JsonDefaults.Options);
-                state.UpdateUsage(start?.Message?.Usage);
-                yield break;
-            }
+                {
+                    var start = JsonSerializer.Deserialize<MessageStartPayload>(data, JsonDefaults.Options);
+                    state.UpdateUsage(start?.Message?.Usage);
+                    yield break;
+                }
             case "message_delta":
-            {
-                var delta = JsonSerializer.Deserialize<MessageDeltaPayload>(data, JsonDefaults.Options);
-                state.UpdateUsage(delta?.Usage);
-                if (!string.IsNullOrWhiteSpace(delta?.Delta?.StopReason))
-                    state.StopReason = MapStopReason(delta.Delta.StopReason!);
-                yield break;
-            }
+                {
+                    var delta = JsonSerializer.Deserialize<MessageDeltaPayload>(data, JsonDefaults.Options);
+                    state.UpdateUsage(delta?.Usage);
+                    if (!string.IsNullOrWhiteSpace(delta?.Delta?.StopReason))
+                        state.StopReason = MapStopReason(delta.Delta.StopReason!);
+                    yield break;
+                }
             case "content_block_start":
-            {
-                var start = JsonSerializer.Deserialize<ContentBlockStart>(data, JsonDefaults.Options);
-                var block = start?.ContentBlock;
-                if (block == null)
-                    yield break;
-
-                state.CurrentContentType = block.Type;
-
-                if (block.Type == "thinking")
-                    yield return new LlmThinkingStartedEvent();
-
-                if (block.Type == "tool_use")
                 {
-                    var toolState = new MutableToolCall(
-                        start!.Index,
-                        ToolCallIdNormalizer.Normalize(block.Id, start.Index))
+                    var start = JsonSerializer.Deserialize<ContentBlockStart>(data, JsonDefaults.Options);
+                    var block = start?.ContentBlock;
+                    if (block == null)
+                        yield break;
+
+                    state.CurrentContentType = block.Type;
+
+                    if (block.Type == "thinking")
+                        yield return new LlmThinkingStartedEvent();
+
+                    if (block.Type == "tool_use")
                     {
-                        Name = block.Name ?? string.Empty,
-                        Signature = block.Signature
-                    };
+                        var toolState = new MutableToolCall(
+                            start!.Index,
+                            ToolCallIdNormalizer.Normalize(block.Id, start.Index))
+                        {
+                            Name = block.Name ?? string.Empty,
+                            Signature = block.Signature
+                        };
 
-                    state.ToolCalls[start.Index] = toolState;
-                    yield return new LlmToolUseStartedEvent(toolState.Id, toolState.Name);
-                }
-
-                yield break;
-            }
-            case "content_block_delta":
-            {
-                var delta = JsonSerializer.Deserialize<ContentBlockDelta>(data, JsonDefaults.Options);
-                var payload = delta?.Delta;
-                if (payload == null)
-                    yield break;
-
-                if (payload.Type == "text_delta" && !string.IsNullOrEmpty(payload.Text))
-                {
-                    state.TextBuilder.Append(payload.Text);
-                    yield return new LlmTextDeltaEvent(payload.Text);
-                }
-
-                if (payload.Type == "thinking_delta" && !string.IsNullOrEmpty(payload.Thinking))
-                {
-                    state.ThinkingBuilder.Append(payload.Thinking);
-                    yield return new LlmThinkingDeltaEvent(payload.Thinking);
-                }
-
-                if (payload.Type == "signature_delta"
-                    && !string.IsNullOrEmpty(payload.Signature)
-                    && state.CurrentContentType == "thinking")
-                {
-                    state.ThinkingSignatureBuilder.Append(payload.Signature);
-                }
-
-                if (payload.Type == "input_json_delta"
-                    && !string.IsNullOrEmpty(payload.PartialJson)
-                    && state.ToolCalls.TryGetValue(delta!.Index, out var toolState))
-                {
-                    toolState.ArgumentsBuilder.Append(payload.PartialJson);
-                    yield return new LlmToolUseArgumentsDeltaEvent(toolState.Id, payload.PartialJson);
-                }
-
-                yield break;
-            }
-            case "content_block_stop":
-            {
-                if (state.CurrentContentType == "thinking")
-                {
-                    var signature = state.ThinkingSignatureBuilder.Length == 0
-                        ? null
-                        : state.ThinkingSignatureBuilder.ToString();
-                    yield return new LlmThinkingCompletedEvent(state.ThinkingBuilder.ToString(), signature);
-                }
-
-                if (state.CurrentContentType == "tool_use")
-                {
-                    var indexPayload = JsonSerializer.Deserialize<ContentBlockStop>(data, JsonDefaults.Options);
-                    if (indexPayload != null
-                        && state.ToolCalls.TryGetValue(indexPayload.Index, out var tool)
-                        && state.CompletedToolIds.Add(tool.Id))
-                    {
-                        yield return new LlmToolUseCompletedEvent(tool.Id);
+                        state.ToolCalls[start.Index] = toolState;
+                        yield return new LlmToolUseStartedEvent(toolState.Id, toolState.Name);
                     }
-                }
 
-                state.CurrentContentType = null;
-                yield break;
-            }
+                    yield break;
+                }
+            case "content_block_delta":
+                {
+                    var delta = JsonSerializer.Deserialize<ContentBlockDelta>(data, JsonDefaults.Options);
+                    var payload = delta?.Delta;
+                    if (payload == null)
+                        yield break;
+
+                    if (payload.Type == "text_delta" && !string.IsNullOrEmpty(payload.Text))
+                    {
+                        state.TextBuilder.Append(payload.Text);
+                        yield return new LlmTextDeltaEvent(payload.Text);
+                    }
+
+                    if (payload.Type == "thinking_delta" && !string.IsNullOrEmpty(payload.Thinking))
+                    {
+                        state.ThinkingBuilder.Append(payload.Thinking);
+                        yield return new LlmThinkingDeltaEvent(payload.Thinking);
+                    }
+
+                    if (payload.Type == "signature_delta"
+                        && !string.IsNullOrEmpty(payload.Signature)
+                        && state.CurrentContentType == "thinking")
+                    {
+                        state.ThinkingSignatureBuilder.Append(payload.Signature);
+                    }
+
+                    if (payload.Type == "input_json_delta"
+                        && !string.IsNullOrEmpty(payload.PartialJson)
+                        && state.ToolCalls.TryGetValue(delta!.Index, out var toolState))
+                    {
+                        toolState.ArgumentsBuilder.Append(payload.PartialJson);
+                        yield return new LlmToolUseArgumentsDeltaEvent(toolState.Id, payload.PartialJson);
+                    }
+
+                    yield break;
+                }
+            case "content_block_stop":
+                {
+                    if (state.CurrentContentType == "thinking")
+                    {
+                        var signature = state.ThinkingSignatureBuilder.Length == 0
+                            ? null
+                            : state.ThinkingSignatureBuilder.ToString();
+                        yield return new LlmThinkingCompletedEvent(state.ThinkingBuilder.ToString(), signature);
+                    }
+
+                    if (state.CurrentContentType == "tool_use")
+                    {
+                        var indexPayload = JsonSerializer.Deserialize<ContentBlockStop>(data, JsonDefaults.Options);
+                        if (indexPayload != null
+                            && state.ToolCalls.TryGetValue(indexPayload.Index, out var tool)
+                            && state.CompletedToolIds.Add(tool.Id))
+                        {
+                            yield return new LlmToolUseCompletedEvent(tool.Id);
+                        }
+                    }
+
+                    state.CurrentContentType = null;
+                    yield break;
+                }
         }
     }
 
