@@ -384,11 +384,21 @@ public sealed class OpenAiResponsesLlmProvider : ILlmProvider
         normalizedMessages = MessageTransforms.EnsureToolResultContinuity(normalizedMessages);
         var input = BuildInput(request.SystemPrompt, normalizedMessages);
 
+        List<OpenAiResponsesTool>? payloadTools = null;
+        if (request.Tools.Count > 0)
+        {
+            payloadTools = new List<OpenAiResponsesTool>(request.Tools.Count);
+            foreach (var tool in request.Tools)
+            {
+                payloadTools.Add(ToOpenAiTool(tool));
+            }
+        }
+
         return new OpenAiResponsesRequest
         {
             Model = request.Model.ModelId,
             Input = input,
-            Tools = request.Tools.Count == 0 ? null : request.Tools.Select(ToOpenAiTool).ToList(),
+            Tools = payloadTools,
             Stream = true,
             MaxOutputTokens = request.MaxOutputTokens ?? request.Model.MaxOutputTokens
         };
@@ -414,139 +424,139 @@ public sealed class OpenAiResponsesLlmProvider : ILlmProvider
             switch (message.Role)
             {
                 case LlmMessageRole.System:
-                {
-                    var text = MessageContent.FlattenText(message.Content);
-                    if (!string.IsNullOrWhiteSpace(text))
                     {
-                        input.Add(new
+                        var text = MessageContent.FlattenText(message.Content);
+                        if (!string.IsNullOrWhiteSpace(text))
                         {
-                            role = "system",
-                            content = text
-                        });
+                            input.Add(new
+                            {
+                                role = "system",
+                                content = text
+                            });
+                        }
+                        break;
                     }
-                    break;
-                }
                 case LlmMessageRole.User:
-                {
-                    var hasImages = message.Content.OfType<ImageContentBlock>().Any();
-                    if (!hasImages)
                     {
+                        var hasImages = message.Content.OfType<ImageContentBlock>().Any();
+                        if (!hasImages)
+                        {
+                            input.Add(new
+                            {
+                                role = "user",
+                                content = MessageContent.FlattenText(message.Content)
+                            });
+                            break;
+                        }
+
+                        var content = new List<object>();
+                        var text = string.Join(
+                            "\n",
+                            message.Content
+                                .OfType<TextContentBlock>()
+                                .Select(x => x.Text)
+                                .Where(x => !string.IsNullOrWhiteSpace(x)));
+                        if (!string.IsNullOrWhiteSpace(text))
+                        {
+                            content.Add(new
+                            {
+                                type = "input_text",
+                                text
+                            });
+                        }
+
+                        foreach (var image in message.Content.OfType<ImageContentBlock>())
+                        {
+                            content.Add(new
+                            {
+                                type = "input_image",
+                                image_url = $"data:{image.MimeType};base64,{image.Base64Data}",
+                                detail = "auto"
+                            });
+                        }
+
                         input.Add(new
                         {
                             role = "user",
-                            content = MessageContent.FlattenText(message.Content)
+                            content = content.ToArray()
                         });
                         break;
                     }
-
-                    var content = new List<object>();
-                    var text = string.Join(
-                        "\n",
-                        message.Content
-                            .OfType<TextContentBlock>()
-                            .Select(x => x.Text)
-                            .Where(x => !string.IsNullOrWhiteSpace(x)));
-                    if (!string.IsNullOrWhiteSpace(text))
-                    {
-                        content.Add(new
-                        {
-                            type = "input_text",
-                            text
-                        });
-                    }
-
-                    foreach (var image in message.Content.OfType<ImageContentBlock>())
-                    {
-                        content.Add(new
-                        {
-                            type = "input_image",
-                            image_url = $"data:{image.MimeType};base64,{image.Base64Data}",
-                            detail = "auto"
-                        });
-                    }
-
-                    input.Add(new
-                    {
-                        role = "user",
-                        content = content.ToArray()
-                    });
-                    break;
-                }
                 case LlmMessageRole.Assistant:
-                {
-                    var textParts = new List<string>();
-                    var reasoningItems = new List<JsonElement>();
-                    foreach (var block in message.Content)
                     {
-                        switch (block)
+                        var textParts = new List<string>();
+                        var reasoningItems = new List<JsonElement>();
+                        foreach (var block in message.Content)
                         {
-                            case TextContentBlock text:
-                                textParts.Add(text.Text);
-                                break;
-                            case ThinkingContentBlock thinking:
-                                if (!string.IsNullOrWhiteSpace(thinking.Signature)
-                                    && ThinkingSignatureInterop.TryNormalizeOpenAiReasoningItem(
-                                        thinking.Signature,
-                                        out var reasoningItem,
-                                        out _))
-                                {
-                                    reasoningItems.Add(reasoningItem);
+                            switch (block)
+                            {
+                                case TextContentBlock text:
+                                    textParts.Add(text.Text);
                                     break;
-                                }
+                                case ThinkingContentBlock thinking:
+                                    if (!string.IsNullOrWhiteSpace(thinking.Signature)
+                                        && ThinkingSignatureInterop.TryNormalizeOpenAiReasoningItem(
+                                            thinking.Signature,
+                                            out var reasoningItem,
+                                            out _))
+                                    {
+                                        reasoningItems.Add(reasoningItem);
+                                        break;
+                                    }
 
-                                if (!string.IsNullOrWhiteSpace(thinking.Text))
-                                    textParts.Add($"<thinking>\n{thinking.Text}\n</thinking>");
-                                break;
+                                    if (!string.IsNullOrWhiteSpace(thinking.Text))
+                                        textParts.Add($"<thinking>\n{thinking.Text}\n</thinking>");
+                                    break;
+                            }
                         }
-                    }
 
-                    var toolCalls = message.Content.OfType<ToolCallContentBlock>().ToList();
-                    // Treat "signature-only" assistant turns as aborted/incomplete history and skip replay.
-                    // These turns can cause OpenAI Responses to reject the request with orphaned reasoning items.
-                    if (reasoningItems.Count > 0 && textParts.Count == 0 && toolCalls.Count == 0)
+                        var toolCalls = message.Content.OfType<ToolCallContentBlock>().ToList();
+                        // Treat "signature-only" assistant turns as aborted/incomplete history and skip replay.
+                        // These turns can cause OpenAI Responses to reject the request with orphaned reasoning items.
+                        if (reasoningItems.Count > 0 && textParts.Count == 0 && toolCalls.Count == 0)
+                            break;
+
+                        foreach (var reasoningItem in reasoningItems)
+                            input.Add(reasoningItem);
+
+                        var assistantText = string.Join("\n", textParts.Where(x => !string.IsNullOrWhiteSpace(x)));
+                        if (!string.IsNullOrWhiteSpace(assistantText))
+                        {
+                            input.Add(new
+                            {
+                                role = "assistant",
+                                content = assistantText
+                            });
+                        }
+
+                        foreach (var call in toolCalls)
+                        {
+                            var callId = ResolveCallId(call.ToolCallId, callIdMap, ref nextCallIndex);
+                            input.Add(new
+                            {
+                                type = "function_call",
+                                call_id = callId,
+                                name = call.ToolName,
+                                arguments = NormalizeJsonObject(call.ArgumentsJson)
+                            });
+                        }
+
                         break;
-
-                    foreach (var reasoningItem in reasoningItems)
-                        input.Add(reasoningItem);
-
-                    var assistantText = string.Join("\n", textParts.Where(x => !string.IsNullOrWhiteSpace(x)));
-                    if (!string.IsNullOrWhiteSpace(assistantText))
-                    {
-                        input.Add(new
-                        {
-                            role = "assistant",
-                            content = assistantText
-                        });
                     }
-
-                    foreach (var call in toolCalls)
-                    {
-                        var callId = ResolveCallId(call.ToolCallId, callIdMap, ref nextCallIndex);
-                        input.Add(new
-                        {
-                            type = "function_call",
-                            call_id = callId,
-                            name = call.ToolName,
-                            arguments = NormalizeJsonObject(call.ArgumentsJson)
-                        });
-                    }
-
-                    break;
-                }
                 case LlmMessageRole.Tool:
-                {
-                    foreach (var toolResult in message.Content.OfType<ToolResultContentBlock>())
                     {
-                        var callId = ResolveCallId(toolResult.ToolCallId, callIdMap, ref nextCallIndex);
-                        input.Add(new
+                        foreach (var toolResult in message.Content.OfType<ToolResultContentBlock>())
                         {
-                            type = "function_call_output",
-                            call_id = callId,
-                            output = toolResult.ContentText
-                        });
+                            var callId = ResolveCallId(toolResult.ToolCallId, callIdMap, ref nextCallIndex);
+                            input.Add(new
+                            {
+                                type = "function_call_output",
+                                call_id = callId,
+                                output = toolResult.ContentText
+                            });
+                        }
+                        break;
                     }
-                    break;
-                }
             }
         }
 
@@ -620,155 +630,155 @@ public sealed class OpenAiResponsesLlmProvider : ILlmProvider
             switch (type)
             {
                 case "response.output_item.added":
-                {
-                    if (!TryGetProperty(root, "item", out var item))
-                        yield break;
-
-                    var itemType = TryGetString(item, "type");
-                    if (itemType == "reasoning" && !state.ThinkingStarted)
                     {
-                        state.ThinkingStarted = true;
-                        yield return new LlmThinkingStartedEvent();
-                        yield break;
-                    }
+                        if (!TryGetProperty(root, "item", out var item))
+                            yield break;
 
-                    if (itemType == "function_call")
-                    {
-                        var rawCallId = TryGetString(item, "call_id") ?? TryGetString(item, "id");
-                        var toolName = TryGetString(item, "name") ?? string.Empty;
-                        var created = TryCreateOrGetToolState(state, rawCallId, toolName, out var toolState);
-                        if (created)
-                            yield return new LlmToolUseStartedEvent(toolState!.Id, toolState.Name);
-
-                        var arguments = TryGetString(item, "arguments");
-                        if (!string.IsNullOrWhiteSpace(arguments))
-                        {
-                            toolState!.ArgumentsBuilder.Append(arguments);
-                            yield return new LlmToolUseArgumentsDeltaEvent(toolState.Id, arguments);
-                        }
-                    }
-
-                    yield break;
-                }
-                case "response.output_text.delta":
-                {
-                    var delta = TryGetString(root, "delta");
-                    if (!string.IsNullOrEmpty(delta))
-                    {
-                        state.TextBuilder.Append(delta);
-                        yield return new LlmTextDeltaEvent(delta);
-                    }
-
-                    yield break;
-                }
-                case "response.reasoning_summary_text.delta":
-                case "response.reasoning_text.delta":
-                {
-                    var delta = TryGetString(root, "delta");
-                    if (!string.IsNullOrEmpty(delta))
-                    {
-                        if (!state.ThinkingStarted)
+                        var itemType = TryGetString(item, "type");
+                        if (itemType == "reasoning" && !state.ThinkingStarted)
                         {
                             state.ThinkingStarted = true;
                             yield return new LlmThinkingStartedEvent();
+                            yield break;
                         }
 
-                        state.ThinkingBuilder.Append(delta);
-                        yield return new LlmThinkingDeltaEvent(delta);
-                    }
-
-                    yield break;
-                }
-                case "response.function_call_arguments.delta":
-                {
-                    var rawCallId = TryGetString(root, "call_id")
-                                    ?? ResolveCallIdFromItemId(root, state)
-                                    ?? $"call_{state.NextToolIndex}";
-                    var created = TryCreateOrGetToolState(state, rawCallId, null, out var toolState);
-                    if (created)
-                        yield return new LlmToolUseStartedEvent(toolState!.Id, toolState.Name);
-
-                    var delta = TryGetString(root, "delta");
-                    if (!string.IsNullOrEmpty(delta))
-                    {
-                        toolState!.ArgumentsBuilder.Append(delta);
-                        yield return new LlmToolUseArgumentsDeltaEvent(toolState.Id, delta);
-                    }
-
-                    yield break;
-                }
-                case "response.function_call_arguments.done":
-                {
-                    var rawCallId = TryGetString(root, "call_id")
-                                    ?? ResolveCallIdFromItemId(root, state)
-                                    ?? $"call_{state.NextToolIndex}";
-                    var created = TryCreateOrGetToolState(state, rawCallId, null, out var toolState);
-                    if (created)
-                        yield return new LlmToolUseStartedEvent(toolState!.Id, toolState.Name);
-
-                    var fullArguments = TryGetString(root, "arguments");
-                    if (!string.IsNullOrWhiteSpace(fullArguments))
-                    {
-                        toolState!.ArgumentsBuilder.Clear();
-                        toolState.ArgumentsBuilder.Append(fullArguments);
-                    }
-
-                    yield break;
-                }
-                case "response.output_item.done":
-                {
-                    if (!TryGetProperty(root, "item", out var item))
-                        yield break;
-
-                    var itemType = TryGetString(item, "type");
-                    if (itemType == "reasoning")
-                    {
-                        state.ThinkingSignature = item.GetRawText();
-                        if (state.ThinkingStarted)
+                        if (itemType == "function_call")
                         {
-                            yield return new LlmThinkingCompletedEvent(
-                                state.ThinkingBuilder.ToString(),
-                                state.ThinkingSignature);
+                            var rawCallId = TryGetString(item, "call_id") ?? TryGetString(item, "id");
+                            var toolName = TryGetString(item, "name") ?? string.Empty;
+                            var created = TryCreateOrGetToolState(state, rawCallId, toolName, out var toolState);
+                            if (created)
+                                yield return new LlmToolUseStartedEvent(toolState!.Id, toolState.Name);
+
+                            var arguments = TryGetString(item, "arguments");
+                            if (!string.IsNullOrWhiteSpace(arguments))
+                            {
+                                toolState!.ArgumentsBuilder.Append(arguments);
+                                yield return new LlmToolUseArgumentsDeltaEvent(toolState.Id, arguments);
+                            }
                         }
+
+                        yield break;
                     }
-                    else if (itemType == "function_call")
+                case "response.output_text.delta":
                     {
-                        var rawCallId = TryGetString(item, "call_id") ?? TryGetString(item, "id");
-                        var toolName = TryGetString(item, "name");
-                        var created = TryCreateOrGetToolState(state, rawCallId, toolName, out var toolState);
+                        var delta = TryGetString(root, "delta");
+                        if (!string.IsNullOrEmpty(delta))
+                        {
+                            state.TextBuilder.Append(delta);
+                            yield return new LlmTextDeltaEvent(delta);
+                        }
+
+                        yield break;
+                    }
+                case "response.reasoning_summary_text.delta":
+                case "response.reasoning_text.delta":
+                    {
+                        var delta = TryGetString(root, "delta");
+                        if (!string.IsNullOrEmpty(delta))
+                        {
+                            if (!state.ThinkingStarted)
+                            {
+                                state.ThinkingStarted = true;
+                                yield return new LlmThinkingStartedEvent();
+                            }
+
+                            state.ThinkingBuilder.Append(delta);
+                            yield return new LlmThinkingDeltaEvent(delta);
+                        }
+
+                        yield break;
+                    }
+                case "response.function_call_arguments.delta":
+                    {
+                        var rawCallId = TryGetString(root, "call_id")
+                                        ?? ResolveCallIdFromItemId(root, state)
+                                        ?? $"call_{state.NextToolIndex}";
+                        var created = TryCreateOrGetToolState(state, rawCallId, null, out var toolState);
                         if (created)
                             yield return new LlmToolUseStartedEvent(toolState!.Id, toolState.Name);
 
-                        var fullArguments = TryGetString(item, "arguments");
+                        var delta = TryGetString(root, "delta");
+                        if (!string.IsNullOrEmpty(delta))
+                        {
+                            toolState!.ArgumentsBuilder.Append(delta);
+                            yield return new LlmToolUseArgumentsDeltaEvent(toolState.Id, delta);
+                        }
+
+                        yield break;
+                    }
+                case "response.function_call_arguments.done":
+                    {
+                        var rawCallId = TryGetString(root, "call_id")
+                                        ?? ResolveCallIdFromItemId(root, state)
+                                        ?? $"call_{state.NextToolIndex}";
+                        var created = TryCreateOrGetToolState(state, rawCallId, null, out var toolState);
+                        if (created)
+                            yield return new LlmToolUseStartedEvent(toolState!.Id, toolState.Name);
+
+                        var fullArguments = TryGetString(root, "arguments");
                         if (!string.IsNullOrWhiteSpace(fullArguments))
                         {
                             toolState!.ArgumentsBuilder.Clear();
                             toolState.ArgumentsBuilder.Append(fullArguments);
                         }
 
-                        if (toolState != null && state.CompletedToolIds.Add(toolState.Id))
-                            yield return new LlmToolUseCompletedEvent(toolState.Id);
+                        yield break;
                     }
-
-                    yield break;
-                }
-                case "response.completed":
-                {
-                    if (TryGetProperty(root, "response", out var response))
+                case "response.output_item.done":
                     {
-                        state.Usage = ParseUsage(response, state.Pricing);
-                        state.StopReason = ParseStopReason(response, state);
-                    }
+                        if (!TryGetProperty(root, "item", out var item))
+                            yield break;
 
-                    yield break;
-                }
+                        var itemType = TryGetString(item, "type");
+                        if (itemType == "reasoning")
+                        {
+                            state.ThinkingSignature = item.GetRawText();
+                            if (state.ThinkingStarted)
+                            {
+                                yield return new LlmThinkingCompletedEvent(
+                                    state.ThinkingBuilder.ToString(),
+                                    state.ThinkingSignature);
+                            }
+                        }
+                        else if (itemType == "function_call")
+                        {
+                            var rawCallId = TryGetString(item, "call_id") ?? TryGetString(item, "id");
+                            var toolName = TryGetString(item, "name");
+                            var created = TryCreateOrGetToolState(state, rawCallId, toolName, out var toolState);
+                            if (created)
+                                yield return new LlmToolUseStartedEvent(toolState!.Id, toolState.Name);
+
+                            var fullArguments = TryGetString(item, "arguments");
+                            if (!string.IsNullOrWhiteSpace(fullArguments))
+                            {
+                                toolState!.ArgumentsBuilder.Clear();
+                                toolState.ArgumentsBuilder.Append(fullArguments);
+                            }
+
+                            if (toolState != null && state.CompletedToolIds.Add(toolState.Id))
+                                yield return new LlmToolUseCompletedEvent(toolState.Id);
+                        }
+
+                        yield break;
+                    }
+                case "response.completed":
+                    {
+                        if (TryGetProperty(root, "response", out var response))
+                        {
+                            state.Usage = ParseUsage(response, state.Pricing);
+                            state.StopReason = ParseStopReason(response, state);
+                        }
+
+                        yield break;
+                    }
                 case "response.failed":
                 case "error":
-                {
-                    var message = ExtractErrorMessage(root) ?? "OpenAI responses stream failed";
-                    yield return new LlmErrorEvent(message, LlmErrorCategory.Validation, Retryable: false);
-                    yield break;
-                }
+                    {
+                        var message = ExtractErrorMessage(root) ?? "OpenAI responses stream failed";
+                        yield return new LlmErrorEvent(message, LlmErrorCategory.Validation, Retryable: false);
+                        yield break;
+                    }
             }
         }
     }
