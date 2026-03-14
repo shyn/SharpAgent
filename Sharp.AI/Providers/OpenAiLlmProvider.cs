@@ -62,7 +62,7 @@ public sealed class OpenAiLlmProvider : ILlmProvider
 
         var useDeveloperRole = request.ThinkingLevel != ThinkingLevel.Off && payloadCompat.SupportsDeveloperRole;
         var reasoningEffort = ResolveReasoningEffort(request.ThinkingLevel);
-        var messages = new List<OpenAiMessage>();
+        var messages = new List<OpenAiMessage>(normalizedMessages.Count + 1);
         if (!string.IsNullOrWhiteSpace(request.SystemPrompt))
         {
             messages.Add(new OpenAiMessage
@@ -72,7 +72,11 @@ public sealed class OpenAiLlmProvider : ILlmProvider
             });
         }
 
-        messages.AddRange(normalizedMessages.Select(message => ToOpenAiMessage(message, compat, useDeveloperRole)));
+        foreach (var message in normalizedMessages)
+        {
+            messages.Add(ToOpenAiMessage(message, compat, useDeveloperRole));
+        }
+
         var openRouterRouting = IsOpenRouterBaseUrl(baseUrl)
             ? NormalizeRouting(payloadCompat.OpenRouterRouting)
             : null;
@@ -80,11 +84,21 @@ public sealed class OpenAiLlmProvider : ILlmProvider
             ? NormalizeRouting(payloadCompat.VercelGatewayRouting)
             : null;
 
+        List<OpenAiTool>? openAiTools = null;
+        if (request.Tools.Count > 0)
+        {
+            openAiTools = new List<OpenAiTool>(request.Tools.Count);
+            foreach (var tool in request.Tools)
+            {
+                openAiTools.Add(ToOpenAiTool(tool, compat));
+            }
+        }
+
         var payload = new OpenAiRequest
         {
             Model = request.Model.ModelId,
             Messages = messages,
-            Tools = request.Tools.Count > 0 ? request.Tools.Select(tool => ToOpenAiTool(tool, compat)).ToList() : null,
+            Tools = openAiTools,
             Stream = true,
             StreamOptions = compat.SupportsUsageInStreaming ? new OpenAiStreamOptions { IncludeUsage = true } : null,
             Store = payloadCompat.SupportsStore ? false : null,
@@ -583,19 +597,24 @@ public sealed class OpenAiLlmProvider : ILlmProvider
         var text = textParts.Count > 0
             ? string.Join("\n", textParts)
             : hasTextBlock ? string.Empty : null;
-        var toolCalls = message.Content
-            .OfType<ToolCallContentBlock>()
-            .Select(call => new OpenAiToolCall
+
+        var toolCalls = new List<OpenAiToolCall>();
+        foreach (var block in message.Content)
+        {
+            if (block is ToolCallContentBlock call)
             {
-                Id = call.ToolCallId,
-                Type = "function",
-                Function = new OpenAiFunctionCall
+                toolCalls.Add(new OpenAiToolCall
                 {
-                    Name = call.ToolName,
-                    Arguments = call.ArgumentsJson
-                }
-            })
-            .ToList();
+                    Id = call.ToolCallId,
+                    Type = "function",
+                    Function = new OpenAiFunctionCall
+                    {
+                        Name = call.ToolName,
+                        Arguments = call.ArgumentsJson
+                    }
+                });
+            }
+        }
 
         return new OpenAiMessage
         {
