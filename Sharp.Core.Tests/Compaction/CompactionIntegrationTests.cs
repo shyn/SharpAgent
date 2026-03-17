@@ -63,10 +63,10 @@ public class CompactionIntegrationTests : IDisposable
     }
 
     [Fact]
-    public void SessionManager_HasCompaction_WithNoCompaction_ReturnsFalse()
+    public async Task SessionManager_HasCompaction_WithNoCompaction_ReturnsFalse()
     {
         // Arrange - use reflection or check if we need to populate entries first
-        var session = SessionManager.CreateAsync(_sessionDir, "/work").Result;
+        var session = await SessionManager.CreateAsync(_sessionDir, "/work");
 
         // Initially no compaction
         Assert.False(session.HasCompaction());

@@ -295,7 +295,7 @@ public sealed class AgentSession : IDisposable, IExtensionRuntimeHost
             var userMessage = LlmMessage.UserText(effectivePrompt);
             await SessionManager.AppendMessageAsync(userMessage, runToken);
 
-            var conversation = SessionManager.RebuildContext().ToList();
+            var conversation = SessionManager.RebuildContext();
 
             if (extensionMessages is { Count: > 0 })
             {
@@ -344,7 +344,7 @@ public sealed class AgentSession : IDisposable, IExtensionRuntimeHost
     public async IAsyncEnumerable<AgentEvent> ContinueAsync(
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var conversation = SessionManager.RebuildContext().ToList();
+        var conversation = SessionManager.RebuildContext();
         if (conversation.Count == 0)
             throw new InvalidOperationException("Cannot continue from an empty session");
 
