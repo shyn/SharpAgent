@@ -62,7 +62,8 @@ public sealed class OpenAiLlmProvider : ILlmProvider
 
         var useDeveloperRole = request.ThinkingLevel != ThinkingLevel.Off && payloadCompat.SupportsDeveloperRole;
         var reasoningEffort = ResolveReasoningEffort(request.ThinkingLevel);
-        var messages = new List<OpenAiMessage>();
+        // Avoid LINQ allocations in hot path
+        var messages = new List<OpenAiMessage>(normalizedMessages.Count + 1);
         if (!string.IsNullOrWhiteSpace(request.SystemPrompt))
         {
             messages.Add(new OpenAiMessage
@@ -72,7 +73,21 @@ public sealed class OpenAiLlmProvider : ILlmProvider
             });
         }
 
-        messages.AddRange(normalizedMessages.Select(message => ToOpenAiMessage(message, compat, useDeveloperRole)));
+        foreach (var message in normalizedMessages)
+        {
+            messages.Add(ToOpenAiMessage(message, compat, useDeveloperRole));
+        }
+
+        List<OpenAiTool>? payloadTools = null;
+        if (request.Tools.Count > 0)
+        {
+            payloadTools = new List<OpenAiTool>(request.Tools.Count);
+            foreach (var tool in request.Tools)
+            {
+                payloadTools.Add(ToOpenAiTool(tool, compat));
+            }
+        }
+
         var openRouterRouting = IsOpenRouterBaseUrl(baseUrl)
             ? NormalizeRouting(payloadCompat.OpenRouterRouting)
             : null;
@@ -84,7 +99,7 @@ public sealed class OpenAiLlmProvider : ILlmProvider
         {
             Model = request.Model.ModelId,
             Messages = messages,
-            Tools = request.Tools.Count > 0 ? request.Tools.Select(tool => ToOpenAiTool(tool, compat)).ToList() : null,
+            Tools = payloadTools,
             Stream = true,
             StreamOptions = compat.SupportsUsageInStreaming ? new OpenAiStreamOptions { IncludeUsage = true } : null,
             Store = payloadCompat.SupportsStore ? false : null,
@@ -277,13 +292,17 @@ public sealed class OpenAiLlmProvider : ILlmProvider
                     yield return new LlmToolUseCompletedEvent(toolState.Id);
             }
 
+            // Avoid LINQ allocations
+            var toolCallsList = new List<ToolCall>(state.ToolCalls.Count);
+            foreach (var x in state.ToolCalls.Values.OrderBy(x => x.Index))
+            {
+                toolCallsList.Add(new ToolCall(x.Id, x.Name, x.ArgumentsBuilder.ToString()));
+            }
+
             yield return new LlmCompletedEvent(
                 state.TextBuilder.Length == 0 ? null : state.TextBuilder.ToString(),
                 null,
-                state.ToolCalls.Values
-                    .OrderBy(x => x.Index)
-                    .Select(x => new ToolCall(x.Id, x.Name, x.ArgumentsBuilder.ToString()))
-                    .ToList(),
+                toolCallsList,
                 state.Usage,
                 StopReason: state.StopReason);
             Debug($"response.completed text_chars={state.TextBuilder.Length} tool_calls={state.ToolCalls.Count}");
@@ -583,19 +602,25 @@ public sealed class OpenAiLlmProvider : ILlmProvider
         var text = textParts.Count > 0
             ? string.Join("\n", textParts)
             : hasTextBlock ? string.Empty : null;
-        var toolCalls = message.Content
-            .OfType<ToolCallContentBlock>()
-            .Select(call => new OpenAiToolCall
+
+        // Avoid LINQ allocations
+        var toolCalls = new List<OpenAiToolCall>();
+        foreach (var block in message.Content)
+        {
+            if (block is ToolCallContentBlock call)
             {
-                Id = call.ToolCallId,
-                Type = "function",
-                Function = new OpenAiFunctionCall
+                toolCalls.Add(new OpenAiToolCall
                 {
-                    Name = call.ToolName,
-                    Arguments = call.ArgumentsJson
-                }
-            })
-            .ToList();
+                    Id = call.ToolCallId,
+                    Type = "function",
+                    Function = new OpenAiFunctionCall
+                    {
+                        Name = call.ToolName,
+                        Arguments = call.ArgumentsJson
+                    }
+                });
+            }
+        }
 
         return new OpenAiMessage
         {
