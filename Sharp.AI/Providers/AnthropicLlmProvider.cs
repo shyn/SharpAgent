@@ -42,16 +42,33 @@ public sealed class AnthropicLlmProvider : ILlmProvider
         normalizedMessages = MessageTransforms.NormalizeToolCallIds(normalizedMessages, ToolCallIdNormalizer.Normalize);
         normalizedMessages = MessageTransforms.ConvertUnsignedThinkingToText(normalizedMessages);
         normalizedMessages = MessageTransforms.ConvertNonAnthropicThinkingSignaturesToText(normalizedMessages);
+        // Avoid LINQ allocations in hot path
+        var payloadMessages = new List<AnthropicMessage>(normalizedMessages.Count);
+        foreach (var m in normalizedMessages)
+        {
+            if (m.Role != LlmMessageRole.System)
+            {
+                payloadMessages.Add(ToAnthropicMessage(m));
+            }
+        }
+
+        List<AnthropicTool>? payloadTools = null;
+        if (request.Tools.Count > 0)
+        {
+            payloadTools = new List<AnthropicTool>(request.Tools.Count);
+            foreach (var tool in request.Tools)
+            {
+                payloadTools.Add(ToAnthropicTool(tool));
+            }
+        }
+
         var payload = new AnthropicRequest
         {
             Model = request.Model.ModelId,
             MaxTokens = request.MaxOutputTokens ?? request.Model.MaxOutputTokens ?? 8192,
             System = request.SystemPrompt,
-            Messages = normalizedMessages
-                .Where(m => m.Role != LlmMessageRole.System)
-                .Select(ToAnthropicMessage)
-                .ToList(),
-            Tools = request.Tools.Count > 0 ? request.Tools.Select(ToAnthropicTool).ToList() : null,
+            Messages = payloadMessages,
+            Tools = payloadTools,
             Stream = true,
             Thinking = thinkingBudget == null
                 ? null
@@ -225,13 +242,17 @@ public sealed class AnthropicLlmProvider : ILlmProvider
                     yield return new LlmToolUseCompletedEvent(toolState.Id);
             }
 
+            // Avoid LINQ allocations
+            var toolCallsList = new List<ToolCall>(state.ToolCalls.Count);
+            foreach (var x in state.ToolCalls.Values.OrderBy(x => x.Index))
+            {
+                toolCallsList.Add(new ToolCall(x.Id, x.Name, x.ArgumentsBuilder.ToString(), x.Signature));
+            }
+
             yield return new LlmCompletedEvent(
                 state.TextBuilder.Length == 0 ? null : state.TextBuilder.ToString(),
                 state.ThinkingBuilder.Length == 0 ? null : state.ThinkingBuilder.ToString(),
-                state.ToolCalls.Values
-                    .OrderBy(x => x.Index)
-                    .Select(x => new ToolCall(x.Id, x.Name, x.ArgumentsBuilder.ToString(), x.Signature))
-                    .ToList(),
+                toolCallsList,
                 state.ToUsage(),
                 state.ThinkingSignatureBuilder.Length == 0 ? null : state.ThinkingSignatureBuilder.ToString(),
                 state.StopReason);

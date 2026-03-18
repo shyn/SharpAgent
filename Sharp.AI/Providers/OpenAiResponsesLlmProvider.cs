@@ -225,13 +225,17 @@ public sealed class OpenAiResponsesLlmProvider : ILlmProvider
             if (finalStopReason == LlmStopReason.Stop && state.ToolCalls.Count > 0)
                 finalStopReason = LlmStopReason.ToolUse;
 
+            // Avoid LINQ allocations
+            var toolCallsList = new List<ToolCall>(state.ToolCalls.Count);
+            foreach (var x in state.ToolCalls.Values.OrderBy(x => x.Index))
+            {
+                toolCallsList.Add(new ToolCall(x.Id, x.Name, x.ArgumentsBuilder.ToString()));
+            }
+
             yield return new LlmCompletedEvent(
                 state.TextBuilder.Length == 0 ? null : state.TextBuilder.ToString(),
                 state.ThinkingBuilder.Length == 0 ? null : state.ThinkingBuilder.ToString(),
-                state.ToolCalls.Values
-                    .OrderBy(x => x.Index)
-                    .Select(x => new ToolCall(x.Id, x.Name, x.ArgumentsBuilder.ToString()))
-                    .ToList(),
+                toolCallsList,
                 state.Usage,
                 state.ThinkingSignature,
                 finalStopReason);
@@ -384,11 +388,21 @@ public sealed class OpenAiResponsesLlmProvider : ILlmProvider
         normalizedMessages = MessageTransforms.EnsureToolResultContinuity(normalizedMessages);
         var input = BuildInput(request.SystemPrompt, normalizedMessages);
 
+        List<OpenAiResponsesTool>? payloadTools = null;
+        if (request.Tools.Count > 0)
+        {
+            payloadTools = new List<OpenAiResponsesTool>(request.Tools.Count);
+            foreach (var tool in request.Tools)
+            {
+                payloadTools.Add(ToOpenAiTool(tool));
+            }
+        }
+
         return new OpenAiResponsesRequest
         {
             Model = request.Model.ModelId,
             Input = input,
-            Tools = request.Tools.Count == 0 ? null : request.Tools.Select(ToOpenAiTool).ToList(),
+            Tools = payloadTools,
             Stream = true,
             MaxOutputTokens = request.MaxOutputTokens ?? request.Model.MaxOutputTokens
         };
@@ -440,12 +454,16 @@ public sealed class OpenAiResponsesLlmProvider : ILlmProvider
                     }
 
                     var content = new List<object>();
-                    var text = string.Join(
-                        "\n",
-                        message.Content
-                            .OfType<TextContentBlock>()
-                            .Select(x => x.Text)
-                            .Where(x => !string.IsNullOrWhiteSpace(x)));
+                    var textParts = new List<string>();
+                    foreach (var block in message.Content)
+                    {
+                        if (block is TextContentBlock textBlock && !string.IsNullOrWhiteSpace(textBlock.Text))
+                        {
+                            textParts.Add(textBlock.Text);
+                        }
+                    }
+
+                    var text = string.Join("\n", textParts);
                     if (!string.IsNullOrWhiteSpace(text))
                     {
                         content.Add(new

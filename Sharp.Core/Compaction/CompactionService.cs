@@ -99,7 +99,14 @@ public sealed class CompactionService
 
         // Build conversation from entries and preserve entry index mapping
         var conversationEntries = BuildConversationEntries(entries);
-        var conversation = conversationEntries.Select(e => e.Message).ToList();
+
+        // Avoid LINQ allocations
+        var conversation = new List<LlmMessage>(conversationEntries.Count);
+        foreach (var e in conversationEntries)
+        {
+            conversation.Add(e.Message);
+        }
+
         var tokenCount = TokenEstimator.EstimateConversationTokens(conversation, systemPrompt);
 
         if (!ShouldCompact(tokenCount, model.ContextWindow))
@@ -133,8 +140,13 @@ public sealed class CompactionService
         // Generate summary of compacted entries
         var summary = await GenerateSummaryAsync(compactedEntries, conversation.Take(cutPoint).ToList(), model, systemPrompt, ct);
 
-        // Map back to entry IDs
-        var compactedEntryIds = compactedEntries.Select(e => e.Id).ToList();
+        // Map back to entry IDs avoiding LINQ allocations
+        var compactedEntryIds = new List<string>(compactedEntries.Count);
+        foreach (var e in compactedEntries)
+        {
+            compactedEntryIds.Add(e.Id);
+        }
+
         var firstKeptEntryId = keptEntries.FirstOrDefault()?.Id;
 
         var tokensAfter = TokenEstimator.EstimateTokens(summary) +
@@ -226,7 +238,15 @@ public sealed class CompactionService
     /// Builds a list of LLM messages from session entries.
     /// </summary>
     private static List<LlmMessage> BuildConversation(IReadOnlyList<SessionEntryEnvelope> entries)
-        => BuildConversationEntries(entries).Select(e => e.Message).ToList();
+    {
+        var conversationEntries = BuildConversationEntries(entries);
+        var messages = new List<LlmMessage>(conversationEntries.Count);
+        foreach (var e in conversationEntries)
+        {
+            messages.Add(e.Message);
+        }
+        return messages;
+    }
 
     private static List<ConversationEntry> BuildConversationEntries(IReadOnlyList<SessionEntryEnvelope> entries)
     {
