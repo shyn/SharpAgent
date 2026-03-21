@@ -72,7 +72,12 @@ public sealed class OpenAiLlmProvider : ILlmProvider
             });
         }
 
-        messages.AddRange(normalizedMessages.Select(message => ToOpenAiMessage(message, compat, useDeveloperRole)));
+        messages.Capacity = messages.Count + normalizedMessages.Count;
+        foreach (var message in normalizedMessages)
+        {
+            messages.Add(ToOpenAiMessage(message, compat, useDeveloperRole));
+        }
+
         var openRouterRouting = IsOpenRouterBaseUrl(baseUrl)
             ? NormalizeRouting(payloadCompat.OpenRouterRouting)
             : null;
@@ -80,11 +85,21 @@ public sealed class OpenAiLlmProvider : ILlmProvider
             ? NormalizeRouting(payloadCompat.VercelGatewayRouting)
             : null;
 
+        List<OpenAiTool>? tools = null;
+        if (request.Tools.Count > 0)
+        {
+            tools = new List<OpenAiTool>(request.Tools.Count);
+            foreach (var tool in request.Tools)
+            {
+                tools.Add(ToOpenAiTool(tool, compat));
+            }
+        }
+
         var payload = new OpenAiRequest
         {
             Model = request.Model.ModelId,
             Messages = messages,
-            Tools = request.Tools.Count > 0 ? request.Tools.Select(tool => ToOpenAiTool(tool, compat)).ToList() : null,
+            Tools = tools,
             Stream = true,
             StreamOptions = compat.SupportsUsageInStreaming ? new OpenAiStreamOptions { IncludeUsage = true } : null,
             Store = payloadCompat.SupportsStore ? false : null,
@@ -277,13 +292,16 @@ public sealed class OpenAiLlmProvider : ILlmProvider
                     yield return new LlmToolUseCompletedEvent(toolState.Id);
             }
 
+            var toolCalls = new List<ToolCall>(state.ToolCalls.Count);
+            foreach (var toolState in state.ToolCalls.Values.OrderBy(x => x.Index))
+            {
+                toolCalls.Add(new ToolCall(toolState.Id, toolState.Name, toolState.ArgumentsBuilder.ToString()));
+            }
+
             yield return new LlmCompletedEvent(
                 state.TextBuilder.Length == 0 ? null : state.TextBuilder.ToString(),
                 null,
-                state.ToolCalls.Values
-                    .OrderBy(x => x.Index)
-                    .Select(x => new ToolCall(x.Id, x.Name, x.ArgumentsBuilder.ToString()))
-                    .ToList(),
+                toolCalls,
                 state.Usage,
                 StopReason: state.StopReason);
             Debug($"response.completed text_chars={state.TextBuilder.Length} tool_calls={state.ToolCalls.Count}");
@@ -583,19 +601,23 @@ public sealed class OpenAiLlmProvider : ILlmProvider
         var text = textParts.Count > 0
             ? string.Join("\n", textParts)
             : hasTextBlock ? string.Empty : null;
-        var toolCalls = message.Content
-            .OfType<ToolCallContentBlock>()
-            .Select(call => new OpenAiToolCall
+        var toolCalls = new List<OpenAiToolCall>();
+        foreach (var block in message.Content)
+        {
+            if (block is ToolCallContentBlock call)
             {
-                Id = call.ToolCallId,
-                Type = "function",
-                Function = new OpenAiFunctionCall
+                toolCalls.Add(new OpenAiToolCall
                 {
-                    Name = call.ToolName,
-                    Arguments = call.ArgumentsJson
-                }
-            })
-            .ToList();
+                    Id = call.ToolCallId,
+                    Type = "function",
+                    Function = new OpenAiFunctionCall
+                    {
+                        Name = call.ToolName,
+                        Arguments = call.ArgumentsJson
+                    }
+                });
+            }
+        }
 
         return new OpenAiMessage
         {
