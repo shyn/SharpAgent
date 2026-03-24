@@ -168,7 +168,9 @@ public sealed class AgentLoop
                         break;
                     case LlmCompletedEvent completedEvent:
                         completed = completedEvent;
-                        toolCalls = completedEvent.ToolCalls.ToList();
+                        toolCalls = new List<ToolCall>(completedEvent.ToolCalls.Count);
+                        foreach (var call in completedEvent.ToolCalls)
+                            toolCalls.Add(call);
                         break;
                     case LlmErrorEvent errorEvent:
                         var errorAssistantBlocks = new List<ContentBlock>();
@@ -222,7 +224,9 @@ public sealed class AgentLoop
                 assistantBlocks.Add(new ThinkingContentBlock(fullThinking, thinkingSignature));
             if (!string.IsNullOrEmpty(fullText))
                 assistantBlocks.Add(new TextContentBlock(fullText));
-            assistantBlocks.AddRange(toolCalls.Select(tc => new ToolCallContentBlock(tc.Id, tc.Name, tc.ArgumentsJson, tc.Signature)));
+
+            foreach (var tc in toolCalls)
+                assistantBlocks.Add(new ToolCallContentBlock(tc.Id, tc.Name, tc.ArgumentsJson, tc.Signature));
 
             var assistantMessage = new LlmMessage(
                 LlmMessageRole.Assistant,
