@@ -24,9 +24,14 @@ public sealed class ToolRuntime
     }
 
     public IReadOnlyList<ToolDefinition> ToToolDefinitions()
-        => _toolsByName.Values
-            .Select(tool => new ToolDefinition(tool.Name, tool.Description, tool.ParametersSchema))
-            .ToList();
+    {
+        var definitions = new List<ToolDefinition>(_toolsByName.Count);
+        foreach (var tool in _toolsByName.Values)
+        {
+            definitions.Add(new ToolDefinition(tool.Name, tool.Description, tool.ParametersSchema));
+        }
+        return definitions;
+    }
 
     public async Task<ToolInvocationResult> ExecuteAsync(
         ToolCall call,

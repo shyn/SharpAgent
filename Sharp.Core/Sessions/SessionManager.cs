@@ -270,7 +270,7 @@ public sealed class SessionManager
         return branch;
     }
 
-    public IReadOnlyList<LlmMessage> RebuildContext(string? leafEntryId = null)
+    public List<LlmMessage> RebuildContext(string? leafEntryId = null)
     {
         var branch = GetBranch(leafEntryId);
         var messages = new List<LlmMessage>();
@@ -322,26 +322,26 @@ public sealed class SessionManager
         switch (entry.Type)
         {
             case "message":
-            {
-                var payload = entry.Payload.Deserialize<MessageEntryPayload>(JsonDefaults.Options);
-                if (payload?.Message != null)
-                    messages.Add(payload.Message);
-                break;
-            }
+                {
+                    var payload = entry.Payload.Deserialize<MessageEntryPayload>(JsonDefaults.Options);
+                    if (payload?.Message != null)
+                        messages.Add(payload.Message);
+                    break;
+                }
             case "custom_message":
-            {
-                var payload = entry.Payload.Deserialize<CustomMessageEntryPayload>(JsonDefaults.Options);
-                if (!string.IsNullOrWhiteSpace(payload?.Content))
-                    messages.Add(LlmMessage.UserText(payload.Content));
-                break;
-            }
+                {
+                    var payload = entry.Payload.Deserialize<CustomMessageEntryPayload>(JsonDefaults.Options);
+                    if (!string.IsNullOrWhiteSpace(payload?.Content))
+                        messages.Add(LlmMessage.UserText(payload.Content));
+                    break;
+                }
             case "branch_summary":
-            {
-                var payload = entry.Payload.Deserialize<BranchSummaryEntryPayload>(JsonDefaults.Options);
-                if (!string.IsNullOrWhiteSpace(payload?.Summary))
-                    messages.Add(LlmMessage.UserText(BranchSummaryPrefix + payload.Summary + BranchSummarySuffix));
-                break;
-            }
+                {
+                    var payload = entry.Payload.Deserialize<BranchSummaryEntryPayload>(JsonDefaults.Options);
+                    if (!string.IsNullOrWhiteSpace(payload?.Summary))
+                        messages.Add(LlmMessage.UserText(BranchSummaryPrefix + payload.Summary + BranchSummarySuffix));
+                    break;
+                }
         }
     }
 
