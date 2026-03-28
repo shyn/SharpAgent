@@ -122,7 +122,6 @@ public sealed class CompactionService
 
         // Get the entries that will be compacted
         var compactedEntries = entries.Take(entryCutPoint).ToList();
-        var keptEntries = entries.Skip(entryCutPoint).ToList();
 
         if (compactedEntries.Count == 0)
         {
@@ -131,11 +130,11 @@ public sealed class CompactionService
         }
 
         // Generate summary of compacted entries
-        var summary = await GenerateSummaryAsync(compactedEntries, conversation.Take(cutPoint).ToList(), model, systemPrompt, ct);
+        var summary = await GenerateSummaryAsync(compactedEntries, conversation.Take(cutPoint), model, systemPrompt, ct);
 
         // Map back to entry IDs
         var compactedEntryIds = compactedEntries.Select(e => e.Id).ToList();
-        var firstKeptEntryId = keptEntries.FirstOrDefault()?.Id;
+        var firstKeptEntryId = entries.Skip(entryCutPoint).FirstOrDefault()?.Id;
 
         var tokensAfter = TokenEstimator.EstimateTokens(summary) +
                          TokenEstimator.EstimateConversationTokens(
@@ -190,7 +189,7 @@ public sealed class CompactionService
         var tokensAfter = TokenEstimator.EstimateTokens(summary);
         if (firstKeptEntryId != null)
         {
-            var conversation = BuildConversation(entries.Skip(compactedEntryIds.Count).ToList());
+            var conversation = BuildConversation(entries.Skip(compactedEntryIds.Count));
             tokensAfter += TokenEstimator.EstimateConversationTokens(conversation, null);
         }
 
@@ -225,16 +224,16 @@ public sealed class CompactionService
     /// <summary>
     /// Builds a list of LLM messages from session entries.
     /// </summary>
-    private static List<LlmMessage> BuildConversation(IReadOnlyList<SessionEntryEnvelope> entries)
-        => BuildConversationEntries(entries).Select(e => e.Message).ToList();
+    private static IEnumerable<LlmMessage> BuildConversation(IEnumerable<SessionEntryEnvelope> entries)
+        => BuildConversationEntries(entries).Select(e => e.Message);
 
-    private static List<ConversationEntry> BuildConversationEntries(IReadOnlyList<SessionEntryEnvelope> entries)
+    private static List<ConversationEntry> BuildConversationEntries(IEnumerable<SessionEntryEnvelope> entries)
     {
         var messages = new List<ConversationEntry>();
 
-        for (var i = 0; i < entries.Count; i++)
+        var i = 0;
+        foreach (var entry in entries)
         {
-            var entry = entries[i];
             switch (entry.Type)
             {
                 case "message":
@@ -249,6 +248,7 @@ public sealed class CompactionService
                         messages.Add(new ConversationEntry(i, LlmMessage.UserText(customPayload.Content)));
                     break;
             }
+            i++;
         }
 
         return messages;
@@ -314,7 +314,7 @@ public sealed class CompactionService
     /// </summary>
     private async Task<string> GenerateSummaryAsync(
         IReadOnlyList<SessionEntryEnvelope> entries,
-        IReadOnlyList<LlmMessage> messagesToSummarize,
+        IEnumerable<LlmMessage> messagesToSummarize,
         ModelDescriptor model,
         string? systemPrompt,
         CancellationToken ct)
@@ -420,7 +420,7 @@ Focus on actionable information and current state.";
     /// <summary>
     /// Serializes a conversation to text for summarization.
     /// </summary>
-    private static string SerializeConversation(IReadOnlyList<LlmMessage> conversation)
+    private static string SerializeConversation(IEnumerable<LlmMessage> conversation)
     {
         var builder = new StringBuilder();
 
