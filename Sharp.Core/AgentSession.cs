@@ -240,7 +240,7 @@ public sealed class AgentSession : IDisposable, IExtensionRuntimeHost
         return session;
     }
 
-    public IReadOnlyList<LlmMessage> RebuildConversation() => SessionManager.RebuildContext();
+    public List<LlmMessage> RebuildConversation() => SessionManager.RebuildContext();
 
     public IAsyncEnumerable<AgentEvent> PromptAsync(
         string prompt,
@@ -295,7 +295,9 @@ public sealed class AgentSession : IDisposable, IExtensionRuntimeHost
             var userMessage = LlmMessage.UserText(effectivePrompt);
             await SessionManager.AppendMessageAsync(userMessage, runToken);
 
-            var conversation = SessionManager.RebuildContext().ToList();
+            // Bolt Optimization: SessionManager.RebuildContext() now returns a mutable List<T> directly.
+            // This prevents a redundant .ToList() O(N) array allocation overhead here.
+            var conversation = SessionManager.RebuildContext();
 
             if (extensionMessages is { Count: > 0 })
             {
@@ -344,7 +346,8 @@ public sealed class AgentSession : IDisposable, IExtensionRuntimeHost
     public async IAsyncEnumerable<AgentEvent> ContinueAsync(
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var conversation = SessionManager.RebuildContext().ToList();
+        // Bolt Optimization: Prevent redundant O(N) .ToList() overhead
+        var conversation = SessionManager.RebuildContext();
         if (conversation.Count == 0)
             throw new InvalidOperationException("Cannot continue from an empty session");
 

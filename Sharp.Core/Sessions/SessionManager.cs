@@ -270,7 +270,9 @@ public sealed class SessionManager
         return branch;
     }
 
-    public IReadOnlyList<LlmMessage> RebuildContext(string? leafEntryId = null)
+    // Bolt Optimization: Returning List<T> instead of IReadOnlyList<T> prevents redundant
+    // .ToList() array allocations in hot paths like AgentSession.PromptCoreAsync
+    public List<LlmMessage> RebuildContext(string? leafEntryId = null)
     {
         var branch = GetBranch(leafEntryId);
         var messages = new List<LlmMessage>();
