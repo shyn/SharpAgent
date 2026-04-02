@@ -270,7 +270,12 @@ public sealed class SessionManager
         return branch;
     }
 
-    public IReadOnlyList<LlmMessage> RebuildContext(string? leafEntryId = null)
+    /// <summary>
+    /// Rebuilds the LLM context from the current branch.
+    /// Returns a List<LlmMessage> directly instead of an interface to prevent
+    /// redundant O(N) array allocations from callers performing downstream LINQ operations.
+    /// </summary>
+    public List<LlmMessage> RebuildContext(string? leafEntryId = null)
     {
         var branch = GetBranch(leafEntryId);
         var messages = new List<LlmMessage>();
