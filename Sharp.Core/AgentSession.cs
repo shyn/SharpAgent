@@ -295,13 +295,13 @@ public sealed class AgentSession : IDisposable, IExtensionRuntimeHost
             var userMessage = LlmMessage.UserText(effectivePrompt);
             await SessionManager.AppendMessageAsync(userMessage, runToken);
 
-            var conversation = SessionManager.RebuildContext().ToList();
+            var conversation = SessionManager.RebuildContext();
 
             if (extensionMessages is { Count: > 0 })
             {
+                conversation.AddRange(extensionMessages);
                 foreach (var extensionMessage in extensionMessages)
                 {
-                    conversation.Add(extensionMessage);
                     await SessionManager.AppendMessageAsync(extensionMessage, runToken);
                 }
             }
@@ -344,7 +344,7 @@ public sealed class AgentSession : IDisposable, IExtensionRuntimeHost
     public async IAsyncEnumerable<AgentEvent> ContinueAsync(
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var conversation = SessionManager.RebuildContext().ToList();
+        var conversation = SessionManager.RebuildContext();
         if (conversation.Count == 0)
             throw new InvalidOperationException("Cannot continue from an empty session");
 
@@ -357,9 +357,9 @@ public sealed class AgentSession : IDisposable, IExtensionRuntimeHost
                 if (queuedMessages.Count == 0)
                     throw new InvalidOperationException("Cannot continue when last message is assistant and queues are empty");
 
+                conversation.AddRange(queuedMessages);
                 foreach (var queued in queuedMessages)
                 {
-                    conversation.Add(queued);
                     await AppendMessageAsync(queued, runToken);
                 }
             }
