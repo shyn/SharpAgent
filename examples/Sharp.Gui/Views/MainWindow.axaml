@@ -72,6 +72,8 @@
 
                     <!-- Settings gear -->
                     <Button Content="⚙"
+                            ToolTip.Tip="Settings"
+                            AutomationProperties.Name="Settings"
                             Command="{Binding OpenSettingsCommand}"
                             Background="Transparent"
                             Foreground="#94a3b8"
@@ -85,6 +87,8 @@
                             Spacing="8"
                             VerticalAlignment="Center">
                     <Button Content="☰"
+                            ToolTip.Tip="Toggle Sidebar"
+                            AutomationProperties.Name="Toggle Sidebar"
                             Command="{Binding ToggleSidebarCommand}"
                             Background="Transparent"
                             Foreground="#94a3b8"
