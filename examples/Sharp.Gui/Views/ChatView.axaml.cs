@@ -1,4 +1,6 @@
 using System.Collections.Specialized;
+using System.ComponentModel;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Platform.Storage;
@@ -24,18 +26,27 @@ public partial class ChatView : UserControl
         this.DataContextChanged += OnDataContextChanged;
     }
 
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        // Auto-focus input when view loads
+        this.FindControl<TextBox>("InputTextBox")?.Focus();
+    }
+
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
         // Unsubscribe from previous VM
         if (_currentVm != null)
         {
             _currentVm.Messages.CollectionChanged -= OnMessagesChanged;
+            _currentVm.PropertyChanged -= OnVmPropertyChanged;
         }
 
         if (DataContext is ChatViewModel vm)
         {
             _currentVm = vm;
             _currentVm.Messages.CollectionChanged += OnMessagesChanged;
+            _currentVm.PropertyChanged += OnVmPropertyChanged;
 
             if (vm.BrowseWorkspaceInteraction is FolderBrowserInteraction interaction)
             {
@@ -71,6 +82,22 @@ public partial class ChatView : UserControl
                 var scrollViewer = this.FindControl<ScrollViewer>("MessageScrollViewer");
                 scrollViewer?.ScrollToEnd();
             });
+        }
+    }
+
+    private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // When processing starts (IsProcessing becomes true), the user has just sent a message.
+        // We should focus the input box so they can immediately type the next message.
+        if (e.PropertyName == nameof(ChatViewModel.IsProcessing))
+        {
+            if (_currentVm?.IsProcessing == true)
+            {
+                Dispatcher.UIThread.Post(() =>
+                {
+                    this.FindControl<TextBox>("InputTextBox")?.Focus();
+                });
+            }
         }
     }
 
