@@ -94,11 +94,31 @@
         </Border>
 
         <!-- Messages List -->
-        <ScrollViewer x:Name="MessageScrollViewer"
-                      VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled">
-            <ItemsControl ItemsSource="{Binding Messages}"
-                          Padding="16,12">
+        <Panel>
+            <!-- Empty State -->
+            <StackPanel VerticalAlignment="Center"
+                        HorizontalAlignment="Center"
+                        Spacing="16"
+                        IsVisible="{Binding !HasHistory}">
+                <TextBlock Text="👋"
+                           FontSize="48"
+                           HorizontalAlignment="Center"/>
+                <TextBlock Text="Welcome to Sharp Agent"
+                           FontSize="24"
+                           FontWeight="SemiBold"
+                           Foreground="#e2e8f0"
+                           HorizontalAlignment="Center"/>
+                <TextBlock Text="Type a message below to start chatting."
+                           FontSize="16"
+                           Foreground="#94a3b8"
+                           HorizontalAlignment="Center"/>
+            </StackPanel>
+
+            <ScrollViewer x:Name="MessageScrollViewer"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl ItemsSource="{Binding Messages}"
+                              Padding="16,12">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="vm:ChatMessageViewModel">
                         <Panel>
@@ -237,7 +257,8 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
-        </ScrollViewer>
+            </ScrollViewer>
+        </Panel>
     </DockPanel>
 
 </UserControl>

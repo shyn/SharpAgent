@@ -63,6 +63,11 @@ public partial class ChatViewModel : ViewModelBase
 
     public ObservableCollection<ChatMessageViewModel> Messages { get; } = [];
 
+    public ChatViewModel()
+    {
+        Messages.CollectionChanged += (s, e) => HasHistory = Messages.Count > 0;
+    }
+
     partial void OnHasHistoryChanged(bool value)
     {
         BrowseWorkspaceCommand.NotifyCanExecuteChanged();
@@ -106,66 +111,65 @@ public partial class ChatViewModel : ViewModelBase
             switch (entry.Type)
             {
                 case "message":
-                {
-                    var payload = entry.Payload.Deserialize<MessageEntryPayload>(JsonDefaults.Options);
-                    if (payload?.Message == null) continue;
-
-                    switch (payload.Message.Role)
                     {
-                        case LlmMessageRole.User:
-                        {
-                            // User messages - show text content
-                            var text = GetTextContent(payload.Message);
-                            if (!string.IsNullOrWhiteSpace(text))
-                                Messages.Add(new ChatMessageViewModel(ChatMessageRole.User, text));
-                            break;
-                        }
+                        var payload = entry.Payload.Deserialize<MessageEntryPayload>(JsonDefaults.Options);
+                        if (payload?.Message == null) continue;
 
-                        case LlmMessageRole.Assistant:
+                        switch (payload.Message.Role)
                         {
-                            // Assistant messages - show only text, filter out tool_calls
-                            var text = GetTextContent(payload.Message);
-                            if (!string.IsNullOrWhiteSpace(text))
-                                Messages.Add(new ChatMessageViewModel(ChatMessageRole.Assistant, text));
-                            break;
-                        }
-
-                        case LlmMessageRole.Tool:
-                        {
-                            // Tool results - show with actual state from session
-                            var toolResult = payload.Message.Content.OfType<ToolResultContentBlock>().FirstOrDefault();
-                            if (toolResult != null)
-                            {
-                                // Determine real state: Error if IsError flag is set, otherwise Completed
-                                var state = toolResult.IsError ? ToolStatus.Error : ToolStatus.Completed;
-                                var toolMsg = new ChatMessageViewModel(ChatMessageRole.Tool, toolResult.ContentText)
+                            case LlmMessageRole.User:
                                 {
-                                    ToolName = toolResult.ToolName,
-                                    ToolCallId = toolResult.ToolCallId,
-                                    ToolStatus = state
-                                };
-                                Messages.Add(toolMsg);
-                            }
-                            break;
+                                    // User messages - show text content
+                                    var text = GetTextContent(payload.Message);
+                                    if (!string.IsNullOrWhiteSpace(text))
+                                        Messages.Add(new ChatMessageViewModel(ChatMessageRole.User, text));
+                                    break;
+                                }
+
+                            case LlmMessageRole.Assistant:
+                                {
+                                    // Assistant messages - show only text, filter out tool_calls
+                                    var text = GetTextContent(payload.Message);
+                                    if (!string.IsNullOrWhiteSpace(text))
+                                        Messages.Add(new ChatMessageViewModel(ChatMessageRole.Assistant, text));
+                                    break;
+                                }
+
+                            case LlmMessageRole.Tool:
+                                {
+                                    // Tool results - show with actual state from session
+                                    var toolResult = payload.Message.Content.OfType<ToolResultContentBlock>().FirstOrDefault();
+                                    if (toolResult != null)
+                                    {
+                                        // Determine real state: Error if IsError flag is set, otherwise Completed
+                                        var state = toolResult.IsError ? ToolStatus.Error : ToolStatus.Completed;
+                                        var toolMsg = new ChatMessageViewModel(ChatMessageRole.Tool, toolResult.ContentText)
+                                        {
+                                            ToolName = toolResult.ToolName,
+                                            ToolCallId = toolResult.ToolCallId,
+                                            ToolStatus = state
+                                        };
+                                        Messages.Add(toolMsg);
+                                    }
+                                    break;
+                                }
                         }
+                        break;
                     }
-                    break;
-                }
 
                 case "compaction":
-                {
-                    var payload = entry.Payload.Deserialize<CompactionEntryPayload>(JsonDefaults.Options);
-                    if (payload != null)
                     {
-                        Messages.Add(new ChatMessageViewModel(ChatMessageRole.Tool,
-                            $"⟳ Compacted ({payload.TokensBefore} tokens)\n{(payload.Summary.Length > 200 ? payload.Summary[..200] + "..." : payload.Summary)}"));
+                        var payload = entry.Payload.Deserialize<CompactionEntryPayload>(JsonDefaults.Options);
+                        if (payload != null)
+                        {
+                            Messages.Add(new ChatMessageViewModel(ChatMessageRole.Tool,
+                                $"⟳ Compacted ({payload.TokensBefore} tokens)\n{(payload.Summary.Length > 200 ? payload.Summary[..200] + "..." : payload.Summary)}"));
+                        }
+                        break;
                     }
-                    break;
-                }
             }
         }
 
-        HasHistory = Messages.Count > 0;
         return Task.CompletedTask;
     }
 
@@ -346,7 +350,6 @@ public partial class ChatViewModel : ViewModelBase
             currentAssistant?.Complete();
             currentThinking?.Complete();
             IsProcessing = false;
-            HasHistory = Messages.Count > 0;
             StatusText = "Ready";
             _cts?.Dispose();
             _cts = null;
@@ -376,7 +379,6 @@ public partial class ChatViewModel : ViewModelBase
         _cts?.Dispose();
         _session?.Dispose();
         _session = null;
-        HasHistory = false;
         RefreshCommandStates();
     }
 }
