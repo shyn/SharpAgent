@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Sharp.AI;
 
 namespace Sharp.Core.Sessions;
@@ -15,7 +16,21 @@ public sealed record SessionEntryEnvelope(
     string Id,
     string? ParentId,
     DateTimeOffset TimestampUtc,
-    JsonElement Payload);
+    JsonElement Payload)
+{
+    [JsonIgnore]
+    internal object? CachedPayload { get; set; }
+
+    public T? GetPayload<T>(JsonSerializerOptions? options = null)
+    {
+        if (CachedPayload is T typed)
+            return typed;
+
+        var deserialized = Payload.Deserialize<T>(options ?? JsonDefaults.Options);
+        CachedPayload = deserialized;
+        return deserialized;
+    }
+}
 
 public sealed record MessageEntryPayload(LlmMessage Message);
 
