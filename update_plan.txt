@@ -1,0 +1,4 @@
+1. Modify `RebuildContext` in `SessionManager` to return `List<LlmMessage>` instead of `IReadOnlyList<LlmMessage>`.
+2. Remove `.ToList()` calls when consuming `RebuildContext()` in `AgentSession.cs` since it returns `List<LlmMessage>`.
+3. Add a pre-commit step for instructions.
+4. Run `dotnet test` and commit.
