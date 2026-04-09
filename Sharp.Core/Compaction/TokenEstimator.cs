@@ -33,7 +33,9 @@ public static class TokenEstimator
 
         // Simple estimation based on character count
         // This is less accurate than tiktoken but much faster and has no dependencies
-        return (int)Math.Ceiling(text.Length / CharactersPerToken);
+        // Uses integer arithmetic ((length + 3) / 4) to avoid floating point operations
+        // and Math.Ceiling call. Since CharactersPerToken is 4.0, we use bit shift.
+        return (text.Length + 3) >> 2;
     }
 
     /// <summary>
