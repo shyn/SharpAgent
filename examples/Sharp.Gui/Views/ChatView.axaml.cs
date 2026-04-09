@@ -79,19 +79,16 @@ public partial class ChatView : UserControl
         if (e.Key != Key.Enter)
             return;
 
-        // Shift+Enter or Command/Ctrl+Enter sends the message
-        if (e.KeyModifiers == KeyModifiers.Shift ||
-            e.KeyModifiers == KeyModifiers.Meta ||
-            e.KeyModifiers == KeyModifiers.Control)
-        {
-            e.Handled = true;
+        // Shift+Enter inserts newline (default behavior)
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+            return;
 
-            if (DataContext is ChatViewModel vm && vm.SendCommand.CanExecute(null))
-            {
-                vm.SendCommand.Execute(null);
-            }
+        // Enter (without Shift) sends the message
+        e.Handled = true;
+
+        if (DataContext is ChatViewModel vm && vm.SendCommand.CanExecute(null))
+        {
+            vm.SendCommand.Execute(null);
         }
-        // Regular Enter inserts newline (default behavior with AcceptsReturn=True)
-        // No need to handle it specially
     }
 }
