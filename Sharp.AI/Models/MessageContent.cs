@@ -31,5 +31,14 @@ public static class MessageContent
     }
 
     public static IReadOnlyList<ToolCallContentBlock> GetToolCalls(IReadOnlyList<ContentBlock> content)
-        => content.OfType<ToolCallContentBlock>().ToList();
+    {
+        // ⚡ Bolt: Avoid LINQ allocations for performance on hot paths
+        var result = new List<ToolCallContentBlock>();
+        foreach (var block in content)
+        {
+            if (block is ToolCallContentBlock toolCall)
+                result.Add(toolCall);
+        }
+        return result;
+    }
 }

@@ -19,8 +19,12 @@ internal static class MessageTransforms
             if (isIncompleteAssistantTurn)
             {
                 changed = true;
-                foreach (var toolCall in message.Content.OfType<ToolCallContentBlock>())
-                    skippedToolCallIds.Add(toolCall.ToolCallId);
+                // ⚡ Bolt: Avoid LINQ OfType<T>() allocations for performance on hot paths
+                foreach (var block in message.Content)
+                {
+                    if (block is ToolCallContentBlock toolCall)
+                        skippedToolCallIds.Add(toolCall.ToolCallId);
+                }
                 continue;
             }
 
@@ -284,7 +288,15 @@ internal static class MessageTransforms
                     FlushPendingToolResults();
 
                 transformed.Add(message);
-                pendingToolCalls = message.Content.OfType<ToolCallContentBlock>().ToList();
+
+                // ⚡ Bolt: Avoid LINQ OfType<T>().ToList() allocations for performance
+                pendingToolCalls = new List<ToolCallContentBlock>();
+                foreach (var block in message.Content)
+                {
+                    if (block is ToolCallContentBlock toolCall)
+                        pendingToolCalls.Add(toolCall);
+                }
+
                 resolvedToolCalls.Clear();
                 continue;
             }
