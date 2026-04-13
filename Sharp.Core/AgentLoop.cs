@@ -113,7 +113,7 @@ public sealed class AgentLoop
 
             var textBuilder = new StringBuilder();
             var thinkingBuilder = new StringBuilder();
-            List<ToolCall> toolCalls = [];
+            IReadOnlyList<ToolCall> toolCalls = Array.Empty<ToolCall>();
             LlmCompletedEvent? completed = null;
 
             var transformed = await BuildRequestMessagesSafe(conversation, transformContext, convertToLlm, ct);
@@ -168,7 +168,7 @@ public sealed class AgentLoop
                         break;
                     case LlmCompletedEvent completedEvent:
                         completed = completedEvent;
-                        toolCalls = completedEvent.ToolCalls.ToList();
+                        toolCalls = completedEvent.ToolCalls;
                         break;
                     case LlmErrorEvent errorEvent:
                         var errorAssistantBlocks = new List<ContentBlock>();
@@ -222,7 +222,11 @@ public sealed class AgentLoop
                 assistantBlocks.Add(new ThinkingContentBlock(fullThinking, thinkingSignature));
             if (!string.IsNullOrEmpty(fullText))
                 assistantBlocks.Add(new TextContentBlock(fullText));
-            assistantBlocks.AddRange(toolCalls.Select(tc => new ToolCallContentBlock(tc.Id, tc.Name, tc.ArgumentsJson, tc.Signature)));
+
+            foreach (var tc in toolCalls)
+            {
+                assistantBlocks.Add(new ToolCallContentBlock(tc.Id, tc.Name, tc.ArgumentsJson, tc.Signature));
+            }
 
             var assistantMessage = new LlmMessage(
                 LlmMessageRole.Assistant,
@@ -273,7 +277,7 @@ public sealed class AgentLoop
                 List<ToolInvocationResult> snapshot;
                 lock (sync)
                 {
-                    snapshot = partials.ToList();
+                    snapshot = partials.GetRange(0, partials.Count);
                 }
 
                 foreach (var partial in snapshot)
