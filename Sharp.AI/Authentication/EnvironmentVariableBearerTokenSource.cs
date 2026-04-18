@@ -124,50 +124,50 @@ public sealed class EnvironmentVariableBearerTokenSource : ILlmBearerTokenSource
         switch (element.ValueKind)
         {
             case JsonValueKind.String:
-            {
-                var raw = element.GetString();
-                if (string.IsNullOrWhiteSpace(raw))
                 {
+                    var raw = element.GetString();
+                    if (string.IsNullOrWhiteSpace(raw))
+                    {
+                        expiresAt = null;
+                        return false;
+                    }
+
+                    if (DateTimeOffset.TryParse(
+                            raw,
+                            CultureInfo.InvariantCulture,
+                            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                            out var parsed))
+                    {
+                        expiresAt = parsed;
+                        return true;
+                    }
+
+                    if (long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var unixStringSeconds))
+                    {
+                        expiresAt = DateTimeOffset.FromUnixTimeSeconds(unixStringSeconds);
+                        return true;
+                    }
+
                     expiresAt = null;
                     return false;
                 }
-
-                if (DateTimeOffset.TryParse(
-                        raw,
-                        CultureInfo.InvariantCulture,
-                        DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-                        out var parsed))
-                {
-                    expiresAt = parsed;
-                    return true;
-                }
-
-                if (long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var unixStringSeconds))
-                {
-                    expiresAt = DateTimeOffset.FromUnixTimeSeconds(unixStringSeconds);
-                    return true;
-                }
-
-                expiresAt = null;
-                return false;
-            }
             case JsonValueKind.Number:
-            {
-                if (element.TryGetInt64(out var unixSeconds))
                 {
-                    expiresAt = DateTimeOffset.FromUnixTimeSeconds(unixSeconds);
-                    return true;
-                }
+                    if (element.TryGetInt64(out var unixSeconds))
+                    {
+                        expiresAt = DateTimeOffset.FromUnixTimeSeconds(unixSeconds);
+                        return true;
+                    }
 
-                if (element.TryGetDouble(out var unixDoubleSeconds) && double.IsFinite(unixDoubleSeconds))
-                {
-                    expiresAt = DateTimeOffset.FromUnixTimeSeconds(checked((long)Math.Truncate(unixDoubleSeconds)));
-                    return true;
-                }
+                    if (element.TryGetDouble(out var unixDoubleSeconds) && double.IsFinite(unixDoubleSeconds))
+                    {
+                        expiresAt = DateTimeOffset.FromUnixTimeSeconds(checked((long)Math.Truncate(unixDoubleSeconds)));
+                        return true;
+                    }
 
-                expiresAt = null;
-                return false;
-            }
+                    expiresAt = null;
+                    return false;
+                }
             default:
                 expiresAt = null;
                 return false;
@@ -180,30 +180,30 @@ public sealed class EnvironmentVariableBearerTokenSource : ILlmBearerTokenSource
         switch (element.ValueKind)
         {
             case JsonValueKind.Number:
-            {
-                if (element.TryGetDouble(out var numberSeconds) && double.IsFinite(numberSeconds))
                 {
-                    seconds = numberSeconds;
-                    break;
-                }
+                    if (element.TryGetDouble(out var numberSeconds) && double.IsFinite(numberSeconds))
+                    {
+                        seconds = numberSeconds;
+                        break;
+                    }
 
-                expiresAt = null;
-                return false;
-            }
-            case JsonValueKind.String:
-            {
-                var raw = element.GetString();
-                if (string.IsNullOrWhiteSpace(raw) ||
-                    !double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedSeconds) ||
-                    !double.IsFinite(parsedSeconds))
-                {
                     expiresAt = null;
                     return false;
                 }
+            case JsonValueKind.String:
+                {
+                    var raw = element.GetString();
+                    if (string.IsNullOrWhiteSpace(raw) ||
+                        !double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedSeconds) ||
+                        !double.IsFinite(parsedSeconds))
+                    {
+                        expiresAt = null;
+                        return false;
+                    }
 
-                seconds = parsedSeconds;
-                break;
-            }
+                    seconds = parsedSeconds;
+                    break;
+                }
             default:
                 expiresAt = null;
                 return false;
