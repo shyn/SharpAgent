@@ -6,3 +6,7 @@
 ## 2024-05-15 - [Avoid redundant ToList allocations by tweaking return type of internal collection source]
 **Learning:** Returning `IReadOnlyList<T>` from a frequently accessed and heavily populated internal method like `SessionManager.RebuildContext()` leads to redundant `Array` allocations downstream when callers unnecessarily cast or copy via `.ToList()`. Because `SessionManager` already builds a `List<T>`, we can directly return `List<T>` and avoid redundant object copies in hot paths like `AgentSession`.
 **Action:** When a method builds a `List<T>` internally and is called frequently on performance-sensitive paths (e.g., rebuilding state for the agent loop), evaluate whether you can return `List<T>` directly. However, respect external-facing interfaces to prevent breaking changes.
+
+## 2025-03-04 - Removing .ToList() allocations in CompactionService
+**Learning:** LINQ methods like `.Select().ToList()`, `.Take().ToList()`, and `.Skip().ToList()` generate enumerator allocations and intermediate array copies in `CompactionService`, a performance-sensitive path where operations frequently occur.
+**Action:** Replace `Select().ToList()` with `ConvertAll()`, and replace `Skip()/Take().ToList()` with native operations like `.GetRange()` for `List<T>` or pre-sized collections for `IReadOnlyList<T>` via iterating over index arrays to eliminate LINQ allocation overhead entirely.
