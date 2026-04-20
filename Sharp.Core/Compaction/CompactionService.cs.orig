@@ -99,7 +99,6 @@ public sealed class CompactionService
 
         // Build conversation from entries and preserve entry index mapping
         var conversationEntries = BuildConversationEntries(entries);
-        // Performance optimization: using ConvertAll avoids LINQ iterators and unnecessary allocations
         var conversation = conversationEntries.ConvertAll(e => e.Message);
         var tokenCount = TokenEstimator.EstimateConversationTokens(conversation, systemPrompt);
 
@@ -122,12 +121,10 @@ public sealed class CompactionService
         var entryCutPoint = MapMessageCutPointToEntryCutPoint(conversationEntries, cutPoint, entries.Count);
 
         // Get the entries that will be compacted
-        // Performance optimization: pre-sized lists and loops avoid LINQ iterators
         var compactedEntries = new List<SessionEntryEnvelope>(entryCutPoint);
         for (var i = 0; i < entryCutPoint; i++)
             compactedEntries.Add(entries[i]);
 
-        // Performance optimization: pre-sized lists and loops avoid LINQ iterators
         var keptEntries = new List<SessionEntryEnvelope>(entries.Count - entryCutPoint);
         for (var i = entryCutPoint; i < entries.Count; i++)
             keptEntries.Add(entries[i]);
