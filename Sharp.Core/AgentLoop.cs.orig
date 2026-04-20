@@ -168,7 +168,6 @@ public sealed class AgentLoop
                         break;
                     case LlmCompletedEvent completedEvent:
                         completed = completedEvent;
-                        // Performance optimization: using List constructor over ToList() leverages ICollection native copying
                         toolCalls = new List<ToolCall>(completedEvent.ToolCalls);
                         break;
                     case LlmErrorEvent errorEvent:
