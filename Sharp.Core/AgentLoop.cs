@@ -168,7 +168,8 @@ public sealed class AgentLoop
                         break;
                     case LlmCompletedEvent completedEvent:
                         completed = completedEvent;
-                        toolCalls = completedEvent.ToolCalls.ToList();
+                        // Bolt: Use List constructor to avoid LINQ enumerator overhead when duplicating collections
+                        toolCalls = new List<ToolCall>(completedEvent.ToolCalls);
                         break;
                     case LlmErrorEvent errorEvent:
                         var errorAssistantBlocks = new List<ContentBlock>();
@@ -273,7 +274,8 @@ public sealed class AgentLoop
                 List<ToolInvocationResult> snapshot;
                 lock (sync)
                 {
-                    snapshot = partials.ToList();
+                    // Bolt: Use List constructor to avoid LINQ enumerator overhead
+                    snapshot = new List<ToolInvocationResult>(partials);
                 }
 
                 foreach (var partial in snapshot)
