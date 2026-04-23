@@ -168,7 +168,8 @@ public sealed class AgentLoop
                         break;
                     case LlmCompletedEvent completedEvent:
                         completed = completedEvent;
-                        toolCalls = completedEvent.ToolCalls.ToList();
+                        // Performance optimization: Using List<T> constructor instead of .ToList() avoids LINQ enumerator overhead
+                        toolCalls = new List<ToolCall>(completedEvent.ToolCalls);
                         break;
                     case LlmErrorEvent errorEvent:
                         var errorAssistantBlocks = new List<ContentBlock>();
@@ -222,7 +223,12 @@ public sealed class AgentLoop
                 assistantBlocks.Add(new ThinkingContentBlock(fullThinking, thinkingSignature));
             if (!string.IsNullOrEmpty(fullText))
                 assistantBlocks.Add(new TextContentBlock(fullText));
-            assistantBlocks.AddRange(toolCalls.Select(tc => new ToolCallContentBlock(tc.Id, tc.Name, tc.ArgumentsJson, tc.Signature)));
+
+            // Performance optimization: Avoid .Select() and .AddRange() allocations in favor of a manual loop
+            foreach (var tc in toolCalls)
+            {
+                assistantBlocks.Add(new ToolCallContentBlock(tc.Id, tc.Name, tc.ArgumentsJson, tc.Signature));
+            }
 
             var assistantMessage = new LlmMessage(
                 LlmMessageRole.Assistant,
@@ -273,7 +279,8 @@ public sealed class AgentLoop
                 List<ToolInvocationResult> snapshot;
                 lock (sync)
                 {
-                    snapshot = partials.ToList();
+                    // Performance optimization: Avoid .ToList() LINQ allocations during tight loops
+                    snapshot = new List<ToolInvocationResult>(partials);
                 }
 
                 foreach (var partial in snapshot)
