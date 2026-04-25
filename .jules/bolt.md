@@ -6,3 +6,7 @@
 ## 2024-05-15 - [Avoid redundant ToList allocations by tweaking return type of internal collection source]
 **Learning:** Returning `IReadOnlyList<T>` from a frequently accessed and heavily populated internal method like `SessionManager.RebuildContext()` leads to redundant `Array` allocations downstream when callers unnecessarily cast or copy via `.ToList()`. Because `SessionManager` already builds a `List<T>`, we can directly return `List<T>` and avoid redundant object copies in hot paths like `AgentSession`.
 **Action:** When a method builds a `List<T>` internally and is called frequently on performance-sensitive paths (e.g., rebuilding state for the agent loop), evaluate whether you can return `List<T>` directly. However, respect external-facing interfaces to prevent breaking changes.
+
+## 2025-05-18 - Caching static ToolDefinition lists to avoid LINQ overhead in hot paths
+**Learning:** Found a recurring memory bottleneck where `ToToolDefinitions()` was evaluating a LINQ query (`.Select().ToList()`) inside `AgentLoop`'s core request-building path. Since the available tools rarely change during an agent session, re-evaluating the definitions causes unnecessary garbage collection and copies on every provider call.
+**Action:** In `ToolRuntime`, compute and store `IReadOnlyList<ToolDefinition>` as a field during construction (`_toolDefinitions`), eliminating the LINQ and `.ToList()` overhead inside `ToToolDefinitions()`.
