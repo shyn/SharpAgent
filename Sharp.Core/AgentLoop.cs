@@ -168,7 +168,7 @@ public sealed class AgentLoop
                         break;
                     case LlmCompletedEvent completedEvent:
                         completed = completedEvent;
-                        toolCalls = completedEvent.ToolCalls.ToList();
+                        toolCalls = completedEvent.ToolCalls as List<ToolCall> ?? new List<ToolCall>(completedEvent.ToolCalls);
                         break;
                     case LlmErrorEvent errorEvent:
                         var errorAssistantBlocks = new List<ContentBlock>();
@@ -273,7 +273,7 @@ public sealed class AgentLoop
                 List<ToolInvocationResult> snapshot;
                 lock (sync)
                 {
-                    snapshot = partials.ToList();
+                    snapshot = new List<ToolInvocationResult>(partials);
                 }
 
                 foreach (var partial in snapshot)
