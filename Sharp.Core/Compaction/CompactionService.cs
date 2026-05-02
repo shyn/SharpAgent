@@ -99,7 +99,7 @@ public sealed class CompactionService
 
         // Build conversation from entries and preserve entry index mapping
         var conversationEntries = BuildConversationEntries(entries);
-        var conversation = conversationEntries.Select(e => e.Message).ToList();
+        var conversation = conversationEntries.ConvertAll(e => e.Message);
         var tokenCount = TokenEstimator.EstimateConversationTokens(conversation, systemPrompt);
 
         if (!ShouldCompact(tokenCount, model.ContextWindow))
@@ -120,22 +120,32 @@ public sealed class CompactionService
 
         var entryCutPoint = MapMessageCutPointToEntryCutPoint(conversationEntries, cutPoint, entries.Count);
 
-        // Get the entries that will be compacted
-        var compactedEntries = entries.Take(entryCutPoint).ToList();
-        var keptEntries = entries.Skip(entryCutPoint).ToList();
-
-        if (compactedEntries.Count == 0)
+        if (entryCutPoint == 0)
         {
             _logger?.LogDebug("No entries selected for compaction");
             return null;
         }
 
-        // Generate summary of compacted entries
-        var summary = await GenerateSummaryAsync(compactedEntries, conversation.Take(cutPoint).ToList(), model, systemPrompt, ct);
+        // Get the entries that will be compacted (avoid LINQ Take)
+        var compactedEntries = new List<SessionEntryEnvelope>(entryCutPoint);
+        for (var i = 0; i < entryCutPoint; i++)
+        {
+            compactedEntries.Add(entries[i]);
+        }
 
-        // Map back to entry IDs
-        var compactedEntryIds = compactedEntries.Select(e => e.Id).ToList();
-        var firstKeptEntryId = keptEntries.FirstOrDefault()?.Id;
+        var messagesToSummarize = conversation.GetRange(0, cutPoint);
+
+        // Generate summary of compacted entries
+        var summary = await GenerateSummaryAsync(compactedEntries, messagesToSummarize, model, systemPrompt, ct);
+
+        // Map back to entry IDs without LINQ
+        var compactedEntryIds = new List<string>(compactedEntries.Count);
+        foreach (var entry in compactedEntries)
+        {
+            compactedEntryIds.Add(entry.Id);
+        }
+
+        var firstKeptEntryId = entryCutPoint < entries.Count ? entries[entryCutPoint].Id : null;
 
         var tokensAfter = TokenEstimator.EstimateTokens(summary) +
                          TokenEstimator.EstimateConversationTokens(
@@ -190,7 +200,15 @@ public sealed class CompactionService
         var tokensAfter = TokenEstimator.EstimateTokens(summary);
         if (firstKeptEntryId != null)
         {
-            var conversation = BuildConversation(entries.Skip(compactedEntryIds.Count).ToList());
+            var skipCount = compactedEntryIds.Count;
+            var keptEntriesCount = entries.Count - skipCount;
+            var keptEntries = new List<SessionEntryEnvelope>(keptEntriesCount);
+            for (var i = skipCount; i < entries.Count; i++)
+            {
+                keptEntries.Add(entries[i]);
+            }
+
+            var conversation = BuildConversation(keptEntries);
             tokensAfter += TokenEstimator.EstimateConversationTokens(conversation, null);
         }
 
@@ -226,7 +244,7 @@ public sealed class CompactionService
     /// Builds a list of LLM messages from session entries.
     /// </summary>
     private static List<LlmMessage> BuildConversation(IReadOnlyList<SessionEntryEnvelope> entries)
-        => BuildConversationEntries(entries).Select(e => e.Message).ToList();
+        => BuildConversationEntries(entries).ConvertAll(e => e.Message);
 
     private static List<ConversationEntry> BuildConversationEntries(IReadOnlyList<SessionEntryEnvelope> entries)
     {
