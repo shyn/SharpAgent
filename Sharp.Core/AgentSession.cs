@@ -155,16 +155,18 @@ public sealed class AgentSession : IDisposable, IExtensionRuntimeHost
             sessionId,
             ct);
 
-        var baseTools = tools?.ToList() ??
-                        [
-                            new ReadTool(options.WorkingDirectory),
-                            new WriteTool(options.WorkingDirectory, options.AllowWriteOutsideWorkspace),
-                            new EditTool(options.WorkingDirectory, options.AllowWriteOutsideWorkspace),
-                            new BashTool(options.WorkingDirectory),
-                            new GrepTool(options.WorkingDirectory),
-                            new FindTool(options.WorkingDirectory),
-                            new LsTool(options.WorkingDirectory)
-                        ];
+        var baseTools = tools != null
+            ? new List<IAgentTool>(tools)
+            : new List<IAgentTool>
+            {
+                new ReadTool(options.WorkingDirectory),
+                new WriteTool(options.WorkingDirectory, options.AllowWriteOutsideWorkspace),
+                new EditTool(options.WorkingDirectory, options.AllowWriteOutsideWorkspace),
+                new BashTool(options.WorkingDirectory),
+                new GrepTool(options.WorkingDirectory),
+                new FindTool(options.WorkingDirectory),
+                new LsTool(options.WorkingDirectory)
+            };
 
         var extensionToolAdapters = extensionRuntime?.CreateRegisteredTools() ?? [];
         var effectiveTools = new List<IAgentTool>(baseTools.Count + extensionToolAdapters.Count);
