@@ -6,3 +6,7 @@
 ## 2024-05-15 - [Avoid redundant ToList allocations by tweaking return type of internal collection source]
 **Learning:** Returning `IReadOnlyList<T>` from a frequently accessed and heavily populated internal method like `SessionManager.RebuildContext()` leads to redundant `Array` allocations downstream when callers unnecessarily cast or copy via `.ToList()`. Because `SessionManager` already builds a `List<T>`, we can directly return `List<T>` and avoid redundant object copies in hot paths like `AgentSession`.
 **Action:** When a method builds a `List<T>` internally and is called frequently on performance-sensitive paths (e.g., rebuilding state for the agent loop), evaluate whether you can return `List<T>` directly. However, respect external-facing interfaces to prevent breaking changes.
+
+## 2024-05-15 - [Required Bolt Comments]
+**Learning:** Found that when optimizing code for performance, simply rewriting it is not enough; explicit comments must be added explaining the optimization (`// Bolt Optimization: ...`), or code reviewers will reject the changes for violating core directives.
+**Action:** Always add inline comments explicitly marking and explaining the reasoning behind performance optimizations when modifying existing logic.
