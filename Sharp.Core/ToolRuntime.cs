@@ -9,6 +9,7 @@ public sealed class ToolRuntime
     private readonly Dictionary<string, IAgentTool> _toolsByName;
     private readonly ToolExecutionContext _context;
     private readonly ExtensionRuntime? _extensionRuntime;
+    private readonly IReadOnlyList<ToolDefinition> _toolDefinitions;
 
     public ToolRuntime(
         IEnumerable<IAgentTool> tools,
@@ -17,16 +18,22 @@ public sealed class ToolRuntime
     {
         _toolsByName = new Dictionary<string, IAgentTool>(StringComparer.Ordinal);
         foreach (var tool in tools)
+        {
             _toolsByName[tool.Name] = tool;
+        }
+
+        var toolDefinitions = new List<ToolDefinition>(_toolsByName.Count);
+        foreach (var tool in _toolsByName.Values)
+        {
+            toolDefinitions.Add(new ToolDefinition(tool.Name, tool.Description, tool.ParametersSchema));
+        }
+        _toolDefinitions = toolDefinitions;
 
         _context = context ?? new ToolExecutionContext(Directory.GetCurrentDirectory(), string.Empty);
         _extensionRuntime = extensionRuntime;
     }
 
-    public IReadOnlyList<ToolDefinition> ToToolDefinitions()
-        => _toolsByName.Values
-            .Select(tool => new ToolDefinition(tool.Name, tool.Description, tool.ParametersSchema))
-            .ToList();
+    public IReadOnlyList<ToolDefinition> ToToolDefinitions() => _toolDefinitions;
 
     public async Task<ToolInvocationResult> ExecuteAsync(
         ToolCall call,
