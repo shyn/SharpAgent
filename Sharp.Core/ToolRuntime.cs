@@ -10,23 +10,29 @@ public sealed class ToolRuntime
     private readonly ToolExecutionContext _context;
     private readonly ExtensionRuntime? _extensionRuntime;
 
+    // Bolt: Cache ToolDefinitions to avoid repeated LINQ allocations on hot path
+    private readonly IReadOnlyList<ToolDefinition> _toolDefinitions;
+
     public ToolRuntime(
         IEnumerable<IAgentTool> tools,
         ToolExecutionContext? context = null,
         ExtensionRuntime? extensionRuntime = null)
     {
         _toolsByName = new Dictionary<string, IAgentTool>(StringComparer.Ordinal);
-        foreach (var tool in tools)
-            _toolsByName[tool.Name] = tool;
 
+        var definitions = new List<ToolDefinition>();
+        foreach (var tool in tools)
+        {
+            _toolsByName[tool.Name] = tool;
+            definitions.Add(new ToolDefinition(tool.Name, tool.Description, tool.ParametersSchema));
+        }
+
+        _toolDefinitions = definitions;
         _context = context ?? new ToolExecutionContext(Directory.GetCurrentDirectory(), string.Empty);
         _extensionRuntime = extensionRuntime;
     }
 
-    public IReadOnlyList<ToolDefinition> ToToolDefinitions()
-        => _toolsByName.Values
-            .Select(tool => new ToolDefinition(tool.Name, tool.Description, tool.ParametersSchema))
-            .ToList();
+    public IReadOnlyList<ToolDefinition> ToToolDefinitions() => _toolDefinitions;
 
     public async Task<ToolInvocationResult> ExecuteAsync(
         ToolCall call,
