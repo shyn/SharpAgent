@@ -7,6 +7,7 @@ namespace Sharp.Core;
 public sealed class ToolRuntime
 {
     private readonly Dictionary<string, IAgentTool> _toolsByName;
+    private readonly List<ToolDefinition> _toolDefinitions;
     private readonly ToolExecutionContext _context;
     private readonly ExtensionRuntime? _extensionRuntime;
 
@@ -16,17 +17,21 @@ public sealed class ToolRuntime
         ExtensionRuntime? extensionRuntime = null)
     {
         _toolsByName = new Dictionary<string, IAgentTool>(StringComparer.Ordinal);
+        _toolDefinitions = new List<ToolDefinition>();
+
         foreach (var tool in tools)
+        {
             _toolsByName[tool.Name] = tool;
+            _toolDefinitions.Add(new ToolDefinition(tool.Name, tool.Description, tool.ParametersSchema));
+        }
 
         _context = context ?? new ToolExecutionContext(Directory.GetCurrentDirectory(), string.Empty);
         _extensionRuntime = extensionRuntime;
     }
 
-    public IReadOnlyList<ToolDefinition> ToToolDefinitions()
-        => _toolsByName.Values
-            .Select(tool => new ToolDefinition(tool.Name, tool.Description, tool.ParametersSchema))
-            .ToList();
+    // Cached as a pre-built list to avoid recurring memory allocations and redundant
+    // LINQ evaluation overhead on high-frequency paths like the AgentLoop.
+    public IReadOnlyList<ToolDefinition> ToToolDefinitions() => _toolDefinitions;
 
     public async Task<ToolInvocationResult> ExecuteAsync(
         ToolCall call,
