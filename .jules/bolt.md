@@ -6,3 +6,7 @@
 ## 2024-05-15 - [Avoid redundant ToList allocations by tweaking return type of internal collection source]
 **Learning:** Returning `IReadOnlyList<T>` from a frequently accessed and heavily populated internal method like `SessionManager.RebuildContext()` leads to redundant `Array` allocations downstream when callers unnecessarily cast or copy via `.ToList()`. Because `SessionManager` already builds a `List<T>`, we can directly return `List<T>` and avoid redundant object copies in hot paths like `AgentSession`.
 **Action:** When a method builds a `List<T>` internally and is called frequently on performance-sensitive paths (e.g., rebuilding state for the agent loop), evaluate whether you can return `List<T>` directly. However, respect external-facing interfaces to prevent breaking changes.
+
+## 2025-05-24 - Cache internal stable list projections in hot paths
+**Learning:** Returning dynamically generated collections using `LINQ` (like `.Select().ToList()`) inside methods frequently accessed on hot paths (e.g. `ToolRuntime.ToToolDefinitions()` called on every agent loop turn) causes hidden recurring allocations and GC pressure.
+**Action:** When a class manages a stable internal collection that is projected outwards, cache the projection as an `IReadOnlyList<T>` during construction or upon mutation, instead of re-evaluating LINQ queries dynamically.
