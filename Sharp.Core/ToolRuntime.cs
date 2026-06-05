@@ -7,6 +7,7 @@ namespace Sharp.Core;
 public sealed class ToolRuntime
 {
     private readonly Dictionary<string, IAgentTool> _toolsByName;
+    private readonly List<ToolDefinition> _toolDefinitions;
     private readonly ToolExecutionContext _context;
     private readonly ExtensionRuntime? _extensionRuntime;
 
@@ -15,18 +16,24 @@ public sealed class ToolRuntime
         ToolExecutionContext? context = null,
         ExtensionRuntime? extensionRuntime = null)
     {
-        _toolsByName = new Dictionary<string, IAgentTool>(StringComparer.Ordinal);
-        foreach (var tool in tools)
+        // Materialize the enumerable if possible to get an accurate count for initial capacity
+        var toolsList = tools as IReadOnlyList<IAgentTool> ?? tools.ToList();
+
+        _toolsByName = new Dictionary<string, IAgentTool>(toolsList.Count, StringComparer.Ordinal);
+        _toolDefinitions = new List<ToolDefinition>(toolsList.Count);
+
+        foreach (var tool in toolsList)
+        {
             _toolsByName[tool.Name] = tool;
+            _toolDefinitions.Add(new ToolDefinition(tool.Name, tool.Description, tool.ParametersSchema));
+        }
 
         _context = context ?? new ToolExecutionContext(Directory.GetCurrentDirectory(), string.Empty);
         _extensionRuntime = extensionRuntime;
     }
 
     public IReadOnlyList<ToolDefinition> ToToolDefinitions()
-        => _toolsByName.Values
-            .Select(tool => new ToolDefinition(tool.Name, tool.Description, tool.ParametersSchema))
-            .ToList();
+        => _toolDefinitions;
 
     public async Task<ToolInvocationResult> ExecuteAsync(
         ToolCall call,
