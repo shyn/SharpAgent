@@ -9,6 +9,7 @@ public sealed class ToolRuntime
     private readonly Dictionary<string, IAgentTool> _toolsByName;
     private readonly ToolExecutionContext _context;
     private readonly ExtensionRuntime? _extensionRuntime;
+    private readonly IReadOnlyList<ToolDefinition> _toolDefinitions;
 
     public ToolRuntime(
         IEnumerable<IAgentTool> tools,
@@ -21,12 +22,15 @@ public sealed class ToolRuntime
 
         _context = context ?? new ToolExecutionContext(Directory.GetCurrentDirectory(), string.Empty);
         _extensionRuntime = extensionRuntime;
-    }
 
-    public IReadOnlyList<ToolDefinition> ToToolDefinitions()
-        => _toolsByName.Values
+        // Bolt: Cache tool definitions on construction to avoid O(N) list allocations
+        // every time ToToolDefinitions is called during the hot AgentLoop.
+        _toolDefinitions = _toolsByName.Values
             .Select(tool => new ToolDefinition(tool.Name, tool.Description, tool.ParametersSchema))
             .ToList();
+    }
+
+    public IReadOnlyList<ToolDefinition> ToToolDefinitions() => _toolDefinitions;
 
     public async Task<ToolInvocationResult> ExecuteAsync(
         ToolCall call,
